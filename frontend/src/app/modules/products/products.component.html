@@ -53,6 +53,29 @@
     </div>
   }
 
+  @if (selectedCount() > 0) {
+    <div class="border-primary/40 bg-primary/5 flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
+      <span class="text-foreground font-semibold">
+        {{ selectedCount() }} product{{ selectedCount() === 1 ? '' : 's' }} selected
+      </span>
+      @if (selectionFull()) {
+        <span class="text-muted-foreground text-xs">One adjustment carries at most {{ maxSelectable }} products.</span>
+      }
+      <button
+        type="button"
+        (click)="openAdjustments()"
+        class="bg-primary text-primary-foreground ml-auto rounded-md px-4 py-2 text-sm font-semibold">
+        Adjust stock
+      </button>
+      <button
+        type="button"
+        (click)="clearSelection()"
+        class="border-muted text-muted-foreground rounded-md border px-3 py-2 text-xs font-semibold">
+        Clear
+      </button>
+    </div>
+  }
+
   <div class="border-muted overflow-x-auto rounded-md border">
     <table class="w-full text-left text-sm">
       <caption class="sr-only">
@@ -60,6 +83,7 @@
       </caption>
       <thead class="bg-card text-muted-foreground text-xs uppercase">
         <tr>
+          <th scope="col" class="w-10 px-4 py-3"><span class="sr-only">Select</span></th>
           <th scope="col" class="px-4 py-3 font-semibold">Code</th>
           <th scope="col" class="px-4 py-3 font-semibold">Description</th>
           <th scope="col" class="px-4 py-3 text-right font-semibold">Balance</th>
@@ -71,17 +95,26 @@
       <tbody class="divide-muted divide-y" aria-live="polite" aria-busy="{{ loading() }}">
         @if (loading() && items().length === 0) {
           <tr>
-            <td colspan="4" class="text-muted-foreground px-4 py-8 text-center">Loading products…</td>
+            <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">Loading products…</td>
           </tr>
         } @else if (items().length === 0) {
           <tr>
-            <td colspan="4" class="text-muted-foreground px-4 py-8 text-center">
+            <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">
               No products yet. Register the first one to start issuing invoices.
             </td>
           </tr>
         } @else {
           @for (product of items(); track product.id) {
-            <tr class="hover:bg-card/60">
+            <tr [class]="isSelected(product.id) ? 'bg-primary/5' : 'hover:bg-card/60'">
+              <td class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="accent-primary h-4 w-4"
+                  [checked]="isSelected(product.id)"
+                  [disabled]="selectionFull() && !isSelected(product.id)"
+                  (change)="toggleSelection(product.id)"
+                  [attr.aria-label]="'Select product ' + product.code + ' for a stock adjustment'" />
+              </td>
               <td class="text-foreground px-4 py-3 font-medium">{{ product.code }}</td>
               <td class="text-muted-foreground px-4 py-3">{{ product.description }}</td>
               <td class="px-4 py-3 text-right">
@@ -116,6 +149,81 @@
         class="border-muted text-foreground rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
         {{ loadingMore() ? 'Loading…' : 'Load more' }}
       </button>
+    </div>
+  }
+
+  @if (adjustmentOpen()) {
+    <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adjustment-title"
+        class="bg-background border-muted flex max-h-[90vh] w-full max-w-2xl flex-col rounded-md border p-6 shadow-lg">
+        <h2 id="adjustment-title" class="text-foreground text-lg font-semibold">Adjust stock</h2>
+        <p class="text-muted-foreground mt-1 text-sm">
+          Enter how much to add or remove. These movements belong to one document, so either all of them are applied or
+          none is. Leave a line blank to skip it.
+        </p>
+
+        <div class="mt-4 flex-1 space-y-2 overflow-y-auto">
+          @for (draft of drafts(); track draft.product.id) {
+            <div class="border-muted flex flex-wrap items-center gap-3 rounded-md border p-3">
+              <div class="min-w-40 flex-1">
+                <p class="text-foreground text-sm font-medium">{{ draft.product.code }}</p>
+                <p class="text-muted-foreground text-xs">{{ draft.product.description }}</p>
+              </div>
+              <span class="text-muted-foreground text-xs">Balance {{ draft.product.balance }}</span>
+              <div>
+                <label [for]="'delta-' + draft.product.id" class="sr-only">
+                  Movement for {{ draft.product.code }}
+                </label>
+                <input
+                  [id]="'delta-' + draft.product.id"
+                  type="number"
+                  inputmode="numeric"
+                  placeholder="e.g. 10 or -3"
+                  [value]="draft.delta()"
+                  (input)="onDeltaInput(draft, $any($event.target).value)"
+                  class="border-muted bg-background text-foreground w-32 rounded-md border px-3 py-2 text-sm" />
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="mt-4">
+          <label for="adjustment-reason" class="text-foreground mb-1 block text-xs font-medium">
+            Reason <span class="text-muted-foreground">(optional)</span>
+          </label>
+          <input
+            id="adjustment-reason"
+            type="text"
+            [formControl]="reasonControl"
+            placeholder="e.g. delivery note 4711"
+            class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+        </div>
+
+        @if (adjustmentResult(); as result) {
+          <div class="mt-4">
+            <app-bulk-result [response]="result" noun="movement" (dismiss)="dismissAdjustmentResult()" />
+          </div>
+        }
+
+        <div class="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            (click)="closeAdjustments()"
+            class="border-muted text-muted-foreground rounded-md border px-4 py-2 text-sm font-semibold">
+            Cancel
+          </button>
+          <button
+            type="button"
+            (click)="applyAdjustments()"
+            [disabled]="!canApply()"
+            class="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60">
+            {{ applying() ? 'Applying…' : 'Apply ' + pendingAdjustments().length + ' movement(s)' }}
+          </button>
+        </div>
+      </div>
     </div>
   }
 

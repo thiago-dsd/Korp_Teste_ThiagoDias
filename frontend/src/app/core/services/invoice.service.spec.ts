@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { environment } from 'src/environments/environment';
 import { apiErrorInterceptor } from '../interceptor/api-error.interceptor';
 import { ApiError } from '../models/api-error.model';
+import { BulkResponse } from '../models/bulk.model';
 import { Invoice, InvoiceStatus } from '../models/invoice.model';
 import { Page } from '../models/page.model';
 import { InvoiceService } from './invoice.service';
@@ -198,5 +199,38 @@ describe('InvoiceService', () => {
 
     const error = failure as ApiError;
     expect(error.isUnavailable).toBe(true);
+  });
+
+  it('should ask for several invoices to be printed in one call', () => {
+    let response: BulkResponse | undefined;
+    service.printMany(['i-1', 'i-2']).subscribe((result) => (response = result));
+
+    const request = http.expectOne(`${environment.billingApiUrl}/invoices/print`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ invoice_ids: ['i-1', 'i-2'] });
+    expect(request.request.headers.get('Idempotency-Key')).toBeTruthy();
+
+    request.flush(
+      {
+        atomic: false,
+        summary: { requested: 2, succeeded: 1, failed: 1, skipped: 0 },
+        results: [
+          { index: 0, status: 'succeeded', id: 'i-1', reference: '1' },
+          {
+            index: 1,
+            status: 'failed',
+            id: 'i-2',
+            reference: '2',
+            error: { code: 'invoice_not_printable', message: 'Only an open invoice can be printed.' },
+          },
+        ],
+      },
+      { status: 207, statusText: 'Multi-Status' },
+    );
+
+    // A partial success is an answer, not a failure: 207 must reach the caller
+    // as a value so it can show what went through and what did not.
+    expect(response?.summary.succeeded).toBe(1);
+    expect(response?.results[1].error?.code).toBe('invoice_not_printable');
   });
 });

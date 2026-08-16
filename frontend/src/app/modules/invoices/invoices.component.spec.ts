@@ -273,6 +273,169 @@ describe('InvoicesComponent', () => {
     expect(component.hasActiveFilters()).toBe(false);
   });
 
+  describe('printing in bulk', () => {
+    async function listWith(...invoices: ReturnType<typeof invoicePayload>[]) {
+      http.expectOne(invoicesUrl).flush({ items: invoices });
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('should only let open invoices be picked', async () => {
+      await listWith(invoicePayload('i-1', 1, 'OPEN'), invoicePayload('i-2', 2, 'CLOSED'));
+
+      expect(component.canSelect(component.items()[0])).toBe(true);
+      expect(component.canSelect(component.items()[1])).toBe(false);
+    });
+
+    it('should print every selected invoice in one call', async () => {
+      await listWith(invoicePayload('i-1', 1, 'OPEN'), invoicePayload('i-2', 2, 'OPEN'));
+
+      component.toggleSelection('i-1');
+      component.toggleSelection('i-2');
+      expect(component.selectedCount()).toBe(2);
+
+      component.printSelected();
+
+      const request = http.expectOne(`${invoicesUrl}/print`);
+      expect(request.request.body).toEqual({ invoice_ids: ['i-1', 'i-2'] });
+      request.flush({
+        atomic: false,
+        summary: { requested: 2, succeeded: 2, failed: 0, skipped: 0 },
+        results: [
+          { index: 0, status: 'succeeded', id: 'i-1', reference: '1' },
+          { index: 1, status: 'succeeded', id: 'i-2', reference: '2' },
+        ],
+      });
+      await fixture.whenStable();
+
+      // The listing is read again, since the invoices are now printing.
+      http.expectOne(invoicesUrl).flush({ items: [invoicePayload('i-1', 1, 'PRINTING')] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.selectedCount()).toBe(0);
+      expect(text()).toContain('All 2 invoices went through.');
+    });
+
+    it('should keep the refused invoices selected so they can be sent again', async () => {
+      await listWith(invoicePayload('i-1', 1, 'OPEN'), invoicePayload('i-2', 2, 'OPEN'));
+
+      component.toggleSelection('i-1');
+      component.toggleSelection('i-2');
+      component.printSelected();
+
+      http.expectOne(`${invoicesUrl}/print`).flush(
+        {
+          atomic: false,
+          summary: { requested: 2, succeeded: 1, failed: 1, skipped: 0 },
+          results: [
+            { index: 0, status: 'succeeded', id: 'i-1', reference: '1' },
+            {
+              index: 1,
+              status: 'failed',
+              id: 'i-2',
+              reference: '2',
+              error: { code: 'invoice_not_printable', message: 'Only an open invoice can be printed.' },
+            },
+          ],
+        },
+        { status: 207, statusText: 'Multi-Status' },
+      );
+      await fixture.whenStable();
+
+      http.expectOne(invoicesUrl).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // What worked leaves the selection; what did not stays, with the reason
+      // on screen, so the operator resends only the rest.
+      expect([...component.selected()]).toEqual(['i-2']);
+      expect(text()).toContain('1 of 2 invoices went through.');
+      expect(text()).toContain('Only an open invoice can be printed.');
+    });
+
+    it('should keep the selection while reading another page', async () => {
+      http.expectOne(invoicesUrl).flush({ items: [invoicePayload('i-1', 1, 'OPEN')], next_cursor: 'cursor-1' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.toggleSelection('i-1');
+      component.loadMore();
+
+      http
+        .expectOne((request) => request.params.get('cursor') === 'cursor-1')
+        .flush({ items: [invoicePayload('i-2', 2, 'OPEN')] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The selection holds ids, so a second page does not disturb it.
+      expect([...component.selected()]).toEqual(['i-1']);
+    });
+
+    it('should pick every open invoice on screen at once', async () => {
+      await listWith(
+        invoicePayload('i-1', 1, 'OPEN'),
+        invoicePayload('i-2', 2, 'CLOSED'),
+        invoicePayload('i-3', 3, 'OPEN'),
+      );
+
+      component.selectAllOpen();
+
+      expect([...component.selected()].sort()).toEqual(['i-1', 'i-3']);
+    });
+
+    it('should not select more invoices than one call may carry', async () => {
+      const many = Array.from({ length: 120 }, (_, index) => invoicePayload(`i-${index}`, index + 1, 'OPEN'));
+      await listWith(...many);
+
+      component.selectAllOpen();
+
+      expect(component.selectedCount()).toBe(component.maxSelectable);
+      expect(component.selectionFull()).toBe(true);
+    });
+
+    it('should name a refused invoice by its number, not by its id', async () => {
+      await listWith(invoicePayload('i-1', 7, 'OPEN'));
+
+      component.toggleSelection('i-1');
+      component.printSelected();
+
+      // An invoice that never started printing has no number to report, so the
+      // service falls back to its id. The screen knows better.
+      http.expectOne(`${invoicesUrl}/print`).flush(
+        {
+          atomic: false,
+          summary: { requested: 1, succeeded: 0, failed: 1, skipped: 0 },
+          results: [
+            {
+              index: 0,
+              status: 'failed',
+              reference: 'i-1',
+              error: { code: 'invoice_not_printable', message: 'Only an open invoice can be printed.' },
+            },
+          ],
+        },
+        { status: 207, statusText: 'Multi-Status' },
+      );
+      await fixture.whenStable();
+
+      http.expectOne(invoicesUrl).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(text()).toContain('#7');
+      expect(text()).not.toContain('i-1');
+    });
+
+    it('should not send anything when nothing is selected', async () => {
+      await listWith(invoicePayload('i-1', 1, 'OPEN'));
+
+      component.printSelected();
+
+      http.expectNone(`${invoicesUrl}/print`);
+    });
+  });
+
   it('should keep the filters while paging', async () => {
     http.expectOne(invoicesUrl).flush({ items: [] });
     await fixture.whenStable();

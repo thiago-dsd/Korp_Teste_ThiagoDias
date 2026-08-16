@@ -20,6 +20,13 @@ export class ApiError extends Error {
     readonly status: number,
     readonly details: Record<string, string> = {},
     readonly requestId?: string,
+    /**
+     * The raw answer, kept for the few endpoints that say more than the
+     * envelope. A refused bulk call is the case: it answers 409 carrying the
+     * per item results, and throwing that detail away would leave the operator
+     * with "something went wrong" instead of the item that stopped the batch.
+     */
+    readonly body?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';

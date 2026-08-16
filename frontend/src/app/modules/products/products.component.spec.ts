@@ -239,4 +239,227 @@ describe('ProductsComponent', () => {
     combined.forEach((request) => request.flush({ items: [] }));
     await fixture.whenStable();
   });
+
+  describe('stock adjustments', () => {
+    const adjustmentsUrl = `${baseUrl}/adjustments`;
+
+    async function listTwoProducts() {
+      http.expectOne(baseUrl).flush({
+        items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 5)],
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    /** Picks both products and writes a movement for each. */
+    async function draftMovements(first: string, second: string) {
+      component.toggleSelection('p-1');
+      component.toggleSelection('p-2');
+      component.openAdjustments();
+      fixture.detectChanges();
+
+      component.onDeltaInput(component.drafts()[0], first);
+      component.onDeltaInput(component.drafts()[1], second);
+      fixture.detectChanges();
+    }
+
+    it('should send one movement per line that was filled in', async () => {
+      await listTwoProducts();
+      // The second line is left blank on purpose: picking a product without
+      // typing a movement must not send anything for it.
+      await draftMovements('100', '');
+
+      expect(component.pendingAdjustments().length).toBe(1);
+
+      component.applyAdjustments();
+
+      const request = http.expectOne(adjustmentsUrl);
+      expect(request.request.body).toEqual({ items: [{ product_id: 'p-1', delta: 100, reason: undefined }] });
+      request.flush({
+        atomic: true,
+        summary: { requested: 1, succeeded: 1, failed: 0, skipped: 0 },
+        results: [{ index: 0, status: 'succeeded', id: 'p-1', reference: 'P-1' }],
+      });
+      await fixture.whenStable();
+
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.adjustmentOpen()).toBe(false);
+      expect(component.selectedCount()).toBe(0);
+    });
+
+    it('should ignore a movement of zero', async () => {
+      await listTwoProducts();
+      await draftMovements('0', '-3');
+
+      expect(component.pendingAdjustments().map((line) => line.delta)).toEqual([-3]);
+    });
+
+    it('should keep what was typed when the whole adjustment is refused', async () => {
+      await listTwoProducts();
+      await draftMovements('100', '-999');
+
+      component.applyAdjustments();
+
+      http.expectOne(adjustmentsUrl).flush(
+        {
+          atomic: true,
+          summary: { requested: 2, succeeded: 0, failed: 1, skipped: 1 },
+          results: [
+            { index: 0, status: 'skipped', reference: 'P-1' },
+            {
+              index: 1,
+              status: 'failed',
+              reference: 'P-2',
+              error: {
+                code: 'insufficient_balance',
+                message: 'Balance is not enough.',
+                details: { available: '5', requested: '-999' },
+              },
+            },
+          ],
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Nothing was applied, so the panel stays open with the values, saying
+      // which line stopped it.
+      expect(component.adjustmentOpen()).toBe(true);
+      expect(component.drafts()[0].delta()).toBe('100');
+      expect(text()).toContain('Nothing was applied.');
+      expect(text()).toContain('Balance is not enough.');
+      expect(component.selectedCount()).toBe(2);
+    });
+
+    it('should name a refused line by its product code, not by its id', async () => {
+      await listTwoProducts();
+      await draftMovements('', '-999');
+
+      component.applyAdjustments();
+
+      // The movement was sent by id, so that is what the service reports back.
+      http.expectOne(adjustmentsUrl).flush(
+        {
+          atomic: true,
+          summary: { requested: 1, succeeded: 0, failed: 1, skipped: 0 },
+          results: [
+            {
+              index: 0,
+              status: 'failed',
+              reference: 'p-2',
+              error: { code: 'insufficient_balance', message: 'Balance is not enough.' },
+            },
+          ],
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(text()).toContain('P-2');
+      expect(text()).not.toContain('p-2');
+    });
+
+    it('should reuse the idempotency key while the movements are unchanged', async () => {
+      await listTwoProducts();
+      await draftMovements('100', '');
+
+      component.applyAdjustments();
+      const first = http.expectOne(adjustmentsUrl);
+      const key = first.request.headers.get('Idempotency-Key');
+      first.error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+      await fixture.whenStable();
+
+      // The answer was lost, not refused: sending the same movements again
+      // must not apply the delivery note twice.
+      component.applyAdjustments();
+      const retry = http.expectOne(adjustmentsUrl);
+
+      expect(retry.request.headers.get('Idempotency-Key')).toBe(key);
+      retry.flush({
+        atomic: true,
+        summary: { requested: 1, succeeded: 1, failed: 0, skipped: 0 },
+        results: [{ index: 0, status: 'succeeded', id: 'p-1', reference: 'P-1' }],
+      });
+      await fixture.whenStable();
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+    });
+
+    it('should use a new idempotency key once a movement changes', async () => {
+      await listTwoProducts();
+      await draftMovements('100', '');
+
+      component.applyAdjustments();
+      const first = http.expectOne(adjustmentsUrl);
+      const key = first.request.headers.get('Idempotency-Key');
+      first.flush(
+        {
+          atomic: true,
+          summary: { requested: 1, succeeded: 0, failed: 1, skipped: 0 },
+          results: [
+            {
+              index: 0,
+              status: 'failed',
+              reference: 'P-1',
+              error: { code: 'invalid_adjustment', message: 'Too large.' },
+            },
+          ],
+        },
+        { status: 409, statusText: 'Conflict' },
+      );
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The operator corrects the line. Reusing the key here would be refused
+      // by the service as the same key with a different payload.
+      component.onDeltaInput(component.drafts()[0], '50');
+      component.applyAdjustments();
+
+      const corrected = http.expectOne(adjustmentsUrl);
+      expect(corrected.request.headers.get('Idempotency-Key')).not.toBe(key);
+      corrected.flush({
+        atomic: true,
+        summary: { requested: 1, succeeded: 1, failed: 0, skipped: 0 },
+        results: [{ index: 0, status: 'succeeded', id: 'p-1', reference: 'P-1' }],
+      });
+      await fixture.whenStable();
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+    });
+
+    it('should not send an adjustment with no movement at all', async () => {
+      await listTwoProducts();
+      await draftMovements('', '');
+
+      expect(component.canApply()).toBe(false);
+      component.applyAdjustments();
+
+      http.expectNone(adjustmentsUrl);
+    });
+
+    it('should keep the selection while reading another page', async () => {
+      http.expectOne(baseUrl).flush({
+        items: [productPayload('p-1', 'P-1', 'Steel bolt', 10)],
+        next_cursor: 'cursor-1',
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.toggleSelection('p-1');
+      component.loadMore();
+
+      http
+        .expectOne((request) => request.params.get('cursor') === 'cursor-1')
+        .flush({ items: [productPayload('p-2', 'P-2', 'Hammer', 5)] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect([...component.selected()]).toEqual(['p-1']);
+    });
+  });
 });

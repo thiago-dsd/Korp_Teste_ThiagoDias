@@ -1,10 +1,25 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
+import { ApiError } from '../models/api-error.model';
+import { BulkResponse, isBulkResponse } from '../models/bulk.model';
 import { Page } from '../models/page.model';
 import { NewProduct, Product, ProductUpdate } from '../models/product.model';
+
+/**
+ * One stock movement: a delivery arriving adds, a loss or a correction
+ * subtracts. It is a movement rather than a new balance because writing a
+ * balance would silently undo whatever happened in the meantime, an invoice
+ * printed at that moment included.
+ */
+export interface StockAdjustment {
+  productId: string;
+  /** How much to add; may be negative, never zero. */
+  delta: number;
+  reason?: string;
+}
 
 /** Filters the catalogue listing accepts. */
 export interface ProductFilters {
@@ -96,6 +111,40 @@ export class ProductService {
     return this.http
       .put<ProductPayload>(`${this.baseUrl}/${id}`, changes, { headers: idempotencyHeaders() })
       .pipe(map(toProduct));
+  }
+
+  /**
+   * Applies several stock movements together.
+   *
+   * The movements belong to one document, so the service applies all of them
+   * or none: a refusal answers 409 with the same body a success does, saying
+   * which item stopped it. That difference is transport, not meaning, so it is
+   * flattened here and the caller always receives a {@link BulkResponse}.
+   *
+   * The key must stay the same across a retry of the same movements and change
+   * whenever they do; see the callers, which derive it from the payload.
+   */
+  adjustBalances(adjustments: StockAdjustment[], idempotencyKey: string): Observable<BulkResponse> {
+    const body = {
+      items: adjustments.map((adjustment) => ({
+        product_id: adjustment.productId,
+        delta: adjustment.delta,
+        reason: adjustment.reason || undefined,
+      })),
+    };
+
+    return this.http
+      .post<BulkResponse>(`${this.baseUrl}/adjustments`, body, {
+        headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }),
+      })
+      .pipe(
+        catchError((error: unknown) => {
+          if (error instanceof ApiError && error.isConflict && isBulkResponse(error.body)) {
+            return of(error.body);
+          }
+          return throwError(() => error);
+        }),
+      );
   }
 }
 

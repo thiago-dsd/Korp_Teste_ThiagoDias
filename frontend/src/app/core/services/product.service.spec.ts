@@ -5,6 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { environment } from 'src/environments/environment';
 import { apiErrorInterceptor } from '../interceptor/api-error.interceptor';
 import { ApiError } from '../models/api-error.model';
+import { BulkResponse, BulkResult } from '../models/bulk.model';
 import { ProductService } from './product.service';
 
 describe('ProductService', () => {
@@ -158,4 +159,86 @@ describe('ProductService', () => {
     const error = new HttpErrorResponse({ status: 500 });
     expect(error).toBeInstanceOf(HttpErrorResponse);
   });
+
+  describe('stock adjustments', () => {
+    it('should send the movements with the given idempotency key', () => {
+      service
+        .adjustBalances(
+          [
+            { productId: 'p-1', delta: 10, reason: 'delivery note 4711' },
+            { productId: 'p-2', delta: -3 },
+          ],
+          'key-1',
+        )
+        .subscribe();
+
+      const request = http.expectOne(`${baseUrl}/adjustments`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.headers.get('Idempotency-Key')).toBe('key-1');
+      expect(request.request.body).toEqual({
+        items: [
+          { product_id: 'p-1', delta: 10, reason: 'delivery note 4711' },
+          { product_id: 'p-2', delta: -3, reason: undefined },
+        ],
+      });
+      request.flush(bulkAnswer(true, [{ index: 0, status: 'succeeded', id: 'p-1', reference: 'P-1' }]));
+    });
+
+    it('should turn a refused batch into an answer instead of an error', () => {
+      // The service answers 409 carrying the per item results. That is the
+      // outcome of the call, not a transport failure, so the screen must
+      // receive it as a value and be able to show which item stopped it.
+      let response: BulkResponse | undefined;
+      let failure: unknown;
+
+      service
+        .adjustBalances([{ productId: 'p-1', delta: -999 }], 'key-1')
+        .subscribe({ next: (result) => (response = result), error: (error) => (failure = error) });
+
+      http.expectOne(`${baseUrl}/adjustments`).flush(
+        bulkAnswer(true, [
+          {
+            index: 0,
+            status: 'failed',
+            reference: 'P-1',
+            error: { code: 'insufficient_balance', message: 'Balance is not enough.' },
+          },
+        ]),
+        { status: 409, statusText: 'Conflict' },
+      );
+
+      expect(failure).toBeUndefined();
+      expect(response?.atomic).toBe(true);
+      expect(response?.results[0].error?.code).toBe('insufficient_balance');
+    });
+
+    it('should still fail on an error that is not a bulk answer', () => {
+      let failure: unknown;
+      service.adjustBalances([{ productId: 'p-1', delta: 1 }], 'key-1').subscribe({
+        error: (error) => (failure = error),
+      });
+
+      http
+        .expectOne(`${baseUrl}/adjustments`)
+        .flush(
+          { error: { code: 'too_many_items', message: 'Send at most 100 items.' } },
+          { status: 400, statusText: 'Bad Request' },
+        );
+
+      expect((failure as ApiError).code).toBe('too_many_items');
+    });
+  });
 });
+
+function bulkAnswer(atomic: boolean, results: BulkResult[]): BulkResponse {
+  return {
+    atomic,
+    summary: {
+      requested: results.length,
+      succeeded: results.filter((result) => result.status === 'succeeded').length,
+      failed: results.filter((result) => result.status === 'failed').length,
+      skipped: results.filter((result) => result.status === 'skipped').length,
+    },
+    results,
+  };
+}

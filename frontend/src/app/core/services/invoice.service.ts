@@ -3,6 +3,7 @@ import { InjectionToken, Injectable, inject } from '@angular/core';
 import { Observable, map, switchMap, takeWhile, timer } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
+import { BulkResponse } from '../models/bulk.model';
 import { DraftLine, Invoice, InvoiceDraft, InvoiceItem, InvoiceStatus, NewInvoiceItem } from '../models/invoice.model';
 import { Page } from '../models/page.model';
 import { idempotencyHeaders } from './product.service';
@@ -160,6 +161,22 @@ export class InvoiceService {
     return this.http
       .post<InvoicePayload>(`${this.baseUrl}/${id}/print`, {}, { headers: idempotencyHeaders() })
       .pipe(map(toInvoice));
+  }
+
+  /**
+   * Starts printing several invoices at once, which is what closing a day of
+   * work looks like.
+   *
+   * The invoices are independent: one that cannot be printed does not hold the
+   * others back, so the answer reports each of them separately and the screen
+   * shows which ones need attention.
+   */
+  printMany(ids: string[]): Observable<BulkResponse> {
+    return this.http.post<BulkResponse>(
+      `${this.baseUrl}/print`,
+      { invoice_ids: ids },
+      { headers: idempotencyHeaders() },
+    );
   }
 
   /**

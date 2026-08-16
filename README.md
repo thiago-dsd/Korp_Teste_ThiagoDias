@@ -156,6 +156,11 @@ below zero, and products are touched in the same order the debit of an invoice u
 adjustment and a print cannot deadlock each other. Repeating a delivery note is stopped by the
 usual `Idempotency-Key`.
 
+Printing and adjusting are offered on the screens: invoices are picked from the listing and
+printed together, and products are picked and moved in one document. What was applied leaves the
+selection and what was refused stays, with the reason next to it, so the operator corrects and
+sends again. Importing a catalogue is API only.
+
 Every call takes at most 100 items and answers with the same shape: whether the items stand or
 fall together, a count to read first, and one compact line per item carrying its position, what
 happened and why. Positions are what line the answer up with the request, so nothing has to be

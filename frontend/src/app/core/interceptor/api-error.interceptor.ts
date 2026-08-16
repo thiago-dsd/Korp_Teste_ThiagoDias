@@ -35,8 +35,24 @@ function toApiError(response: HttpErrorResponse): ApiError {
   const payload = body?.error;
 
   if (payload?.code && payload?.message) {
-    return new ApiError(payload.code, payload.message, response.status, payload.details ?? {}, payload.request_id);
+    return new ApiError(
+      payload.code,
+      payload.message,
+      response.status,
+      payload.details ?? {},
+      payload.request_id,
+      response.error,
+    );
   }
 
-  return new ApiError('unexpected_error', 'Something went wrong. Please try again.', response.status);
+  // Not the usual envelope. The raw answer travels along because some
+  // endpoints, such as a refused bulk call, put the useful detail there.
+  return new ApiError(
+    'unexpected_error',
+    'Something went wrong. Please try again.',
+    response.status,
+    {},
+    undefined,
+    response.error,
+  );
 }
