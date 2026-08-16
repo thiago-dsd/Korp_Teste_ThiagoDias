@@ -2,7 +2,6 @@ package billing
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,7 +9,6 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
-	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 // API exposes the billing use cases over HTTP.
@@ -169,19 +167,13 @@ func (a *API) createInvoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) listInvoices(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-
-	limit, err := pagination.ParseLimit(query.Get("limit"))
+	query, err := ParseQuery(r.URL.Query())
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
 
-	page, err := a.service.ListInvoices(r.Context(), Query{
-		Status: strings.ToUpper(strings.TrimSpace(query.Get("status"))),
-		Limit:  limit,
-		Cursor: query.Get("cursor"),
-	})
+	page, err := a.service.ListInvoices(r.Context(), query)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return

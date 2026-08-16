@@ -84,6 +84,26 @@ listing is ordered by, so a product registered while someone is paging never mak
 twice or disappear, and reading page fifty costs the same as reading page one. The cursor is
 opaque: clients pass back what they received. Pages hold 20 items by default and 100 at most.
 
+Filters combine freely and are applied by the database, never in memory:
+
+| Products | |
+| --- | --- |
+| `search` | matches code and description |
+| `min_balance`, `max_balance` | `max_balance=0` lists what is out of stock |
+| `sort` | `code` (default) or `balance`, with `order=asc\|desc` |
+
+| Invoices | |
+| --- | --- |
+| `status` | one or several: `status=OPEN,PRINTING` |
+| `number` | finds a single invoice |
+| `created_from`, `created_to` | a date covers the whole day |
+| `product_id`, `product_code` | the invoices that used a product |
+| `has_failure` | the ones whose last print attempt did not go through |
+| `order` | `desc` (default) reads from the newest number |
+
+An unusable filter is refused with `400 invalid_filter` naming every offending field at once, and
+the listing keeps its filters while paging.
+
 ### Failure scenarios
 
 | Scenario | What happens |

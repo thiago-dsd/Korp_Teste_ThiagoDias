@@ -27,12 +27,78 @@
         </button>
       }
     </div>
+    <button
+      type="button"
+      (click)="toggleNeedsAttention()"
+      [attr.aria-pressed]="needsAttentionOnly()"
+      class="rounded-md px-3 py-1.5 text-xs font-semibold"
+      [class]="needsAttentionOnly() ? 'bg-destructive text-primary-foreground' : 'bg-card text-muted-foreground'">
+      Needs attention
+    </button>
+
     @if (hasPrinting()) {
       <button type="button" (click)="refresh()" class="text-primary ml-auto text-xs font-semibold underline">
         Refresh
       </button>
     }
   </div>
+
+  <form
+    (ngSubmit)="applyFilters()"
+    class="border-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-5"
+    aria-label="Filter invoices">
+    <div>
+      <label for="filter-number" class="text-foreground mb-1 block text-xs font-medium">Invoice number</label>
+      <input
+        id="filter-number"
+        type="number"
+        min="1"
+        inputmode="numeric"
+        [formControl]="numberControl"
+        placeholder="e.g. 42"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label for="filter-from" class="text-foreground mb-1 block text-xs font-medium">Issued from</label>
+      <input
+        id="filter-from"
+        type="date"
+        [formControl]="fromControl"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label for="filter-to" class="text-foreground mb-1 block text-xs font-medium">Issued to</label>
+      <input
+        id="filter-to"
+        type="date"
+        [formControl]="toControl"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+    </div>
+    <div>
+      <label for="filter-product" class="text-foreground mb-1 block text-xs font-medium">Product code</label>
+      <input
+        id="filter-product"
+        type="text"
+        [formControl]="productCodeControl"
+        placeholder="e.g. P-1"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+    </div>
+    <div class="flex items-end gap-2">
+      <button
+        type="submit"
+        class="bg-primary text-primary-foreground flex-1 rounded-md px-3 py-2 text-sm font-semibold">
+        Apply
+      </button>
+      @if (hasActiveFilters()) {
+        <button
+          type="button"
+          (click)="clearFilters()"
+          class="border-muted text-muted-foreground rounded-md border px-3 py-2 text-sm font-semibold">
+          Clear
+        </button>
+      }
+    </div>
+  </form>
 
   @if (loadFailure(); as error) {
     <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">

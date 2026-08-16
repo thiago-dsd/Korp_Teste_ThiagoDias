@@ -55,10 +55,10 @@ describe('ProductService', () => {
   });
 
   it('should send the search term only when it is filled', () => {
-    service.list('  bolt  ').subscribe();
+    service.list({ search: '  bolt  ' }).subscribe();
     expect(http.expectOne((request) => request.params.get('search') === 'bolt').request.method).toBe('GET');
 
-    service.list('   ').subscribe();
+    service.list({ search: '   ' }).subscribe();
     expect(http.expectOne((request) => !request.params.has('search')).request.method).toBe('GET');
   });
 
@@ -69,7 +69,7 @@ describe('ProductService', () => {
     http.expectOne((request) => !request.params.has('cursor')).flush({ items: [], next_cursor: 'cursor-1' });
     expect(page?.nextCursor).toBe('cursor-1');
 
-    service.list('', 'cursor-1').subscribe();
+    service.list({}, 'cursor-1').subscribe();
     http.expectOne((request) => request.params.get('cursor') === 'cursor-1').flush({ items: [] });
   });
 

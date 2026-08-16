@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 )
@@ -27,8 +28,13 @@ var ErrInvalidCursor = apperr.Invalid("invalid_cursor",
 
 // Cursor points at the last item of a page.
 type Cursor struct {
-	// Key is the value of the column the listing is ordered by.
+	// Key is the value of the column the listing is ordered by. When the
+	// listing is ordered by something that repeats, Key holds the unique
+	// tiebreaker and Sort holds the value of the ordered column.
 	Key string `json:"k"`
+	// Sort is the value of the column the listing is sorted by, when that
+	// column is not unique on its own.
+	Sort string `json:"s,omitempty"`
 	// ID breaks ties when two rows share the same key.
 	ID string `json:"i,omitempty"`
 }
@@ -74,6 +80,47 @@ func NormalizeLimit(limit int) int {
 		return MaxLimit
 	default:
 		return limit
+	}
+}
+
+// Direction is the order a listing is read in.
+type Direction string
+
+// Reading directions.
+const (
+	Ascending  Direction = "asc"
+	Descending Direction = "desc"
+)
+
+// Comparison returns the SQL operator that walks a listing in this direction,
+// which is what keeps a cursor pointing forward.
+func (d Direction) Comparison() string {
+	if d == Descending {
+		return "<"
+	}
+	return ">"
+}
+
+// SQL returns the keyword for an ORDER BY clause.
+func (d Direction) SQL() string {
+	if d == Descending {
+		return "DESC"
+	}
+	return "ASC"
+}
+
+// ParseDirection reads a direction, defaulting to fallback when empty.
+func ParseDirection(raw string, fallback Direction) (Direction, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return fallback, nil
+	case string(Ascending):
+		return Ascending, nil
+	case string(Descending):
+		return Descending, nil
+	default:
+		return "", apperr.Invalid("invalid_order", "The sort direction is not valid.").
+			WithDetails(map[string]string{"order": "must be asc or desc"})
 	}
 }
 

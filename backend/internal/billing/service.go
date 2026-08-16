@@ -81,12 +81,7 @@ func (s *Service) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 	return s.invoices.GetByID(ctx, id)
 }
 
-// ListInvoices returns a page of invoices, optionally filtered by status.
+// ListInvoices returns a page of invoices for the given filters.
 func (s *Service) ListInvoices(ctx context.Context, query Query) (Page, error) {
-	if query.Status != "" && !ValidStatus(query.Status) {
-		return Page{}, ErrInvalidInvoice.WithDetails(map[string]string{
-			"status": "must be OPEN, PRINTING or CLOSED",
-		})
-	}
 	return s.invoices.List(ctx, query)
 }

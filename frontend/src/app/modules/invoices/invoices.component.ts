@@ -1,13 +1,14 @@
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { ReactiveFormsModule, FormControl } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { Subject, catchError, of, startWith, switchMap, tap } from 'rxjs';
 
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { Invoice, InvoiceStatus } from 'src/app/core/models/invoice.model';
-import { InvoiceService } from 'src/app/core/services/invoice.service';
+import { InvoiceFilters, InvoiceService } from 'src/app/core/services/invoice.service';
 import { InvoiceStatusComponent } from './invoice-status.component';
 
 /** Filters offered above the list. */
@@ -16,7 +17,7 @@ const STATUS_FILTERS: readonly (InvoiceStatus | '')[] = ['', 'OPEN', 'PRINTING',
 /** Lists the invoices and their current state. */
 @Component({
   selector: 'app-invoices',
-  imports: [RouterLink, DatePipe, AngularSvgIconModule, InvoiceStatusComponent],
+  imports: [RouterLink, DatePipe, ReactiveFormsModule, AngularSvgIconModule, InvoiceStatusComponent],
   templateUrl: './invoices.component.html',
 })
 export class InvoicesComponent implements OnInit {
@@ -25,6 +26,30 @@ export class InvoicesComponent implements OnInit {
 
   readonly filters = STATUS_FILTERS;
   readonly activeFilter = signal<InvoiceStatus | ''>('');
+
+  /** Free filters offered above the listing. */
+  readonly numberControl = new FormControl('', { nonNullable: true });
+  readonly fromControl = new FormControl('', { nonNullable: true });
+  readonly toControl = new FormControl('', { nonNullable: true });
+  readonly productCodeControl = new FormControl('', { nonNullable: true });
+  readonly needsAttentionOnly = signal(false);
+
+  // Reading the controls as signals keeps the "clear" button in step with what
+  // is typed, without the template asking for it on every change detection.
+  private readonly typedFilters = [
+    toSignal(this.numberControl.valueChanges, { initialValue: '' }),
+    toSignal(this.fromControl.valueChanges, { initialValue: '' }),
+    toSignal(this.toControl.valueChanges, { initialValue: '' }),
+    toSignal(this.productCodeControl.valueChanges, { initialValue: '' }),
+  ];
+
+  /** True when anything is filtering the listing. */
+  readonly hasActiveFilters = computed(
+    () =>
+      this.needsAttentionOnly() ||
+      this.activeFilter() !== '' ||
+      this.typedFilters.some((value) => value() !== ''),
+  );
 
   readonly items = signal<Invoice[]>([]);
   readonly loading = signal(false);
@@ -50,11 +75,25 @@ export class InvoicesComponent implements OnInit {
       .subscribe();
   }
 
+  /** The filters currently applied to the listing. */
+  private currentFilters(): InvoiceFilters {
+    const number = Number(this.numberControl.value.trim());
+
+    return {
+      statuses: this.activeFilter() ? [this.activeFilter() as InvoiceStatus] : undefined,
+      number: this.numberControl.value.trim() && Number.isFinite(number) ? number : undefined,
+      createdFrom: this.fromControl.value || undefined,
+      createdTo: this.toControl.value || undefined,
+      productCode: this.productCodeControl.value || undefined,
+      hasFailure: this.needsAttentionOnly() ? true : undefined,
+    };
+  }
+
   private fetch() {
     this.loading.set(true);
     this.loadFailure.set(null);
 
-    return this.invoices.list(this.activeFilter()).pipe(
+    return this.invoices.list(this.currentFilters()).pipe(
       tap((page) => {
         this.items.set(page.items);
         this.nextCursor.set(page.nextCursor);
@@ -78,7 +117,7 @@ export class InvoicesComponent implements OnInit {
     this.loadingMore.set(true);
 
     this.invoices
-      .list(this.activeFilter(), cursor)
+      .list(this.currentFilters(), cursor)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (page) => {
@@ -95,6 +134,28 @@ export class InvoicesComponent implements OnInit {
 
   selectFilter(status: InvoiceStatus | ''): void {
     this.activeFilter.set(status);
+    this.reload.next();
+  }
+
+  /** Applies the free filters. */
+  applyFilters(): void {
+    this.reload.next();
+  }
+
+  /** Shows only the invoices whose last print attempt did not go through. */
+  toggleNeedsAttention(): void {
+    this.needsAttentionOnly.update((only) => !only);
+    this.reload.next();
+  }
+
+  /** Clears every filter and reads the listing from the top. */
+  clearFilters(): void {
+    this.activeFilter.set('');
+    this.needsAttentionOnly.set(false);
+    this.numberControl.setValue('');
+    this.fromControl.setValue('');
+    this.toControl.setValue('');
+    this.productCodeControl.setValue('');
     this.reload.next();
   }
 

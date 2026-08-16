@@ -81,3 +81,47 @@ func TestParseLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestParseDirection(t *testing.T) {
+	tests := map[string]pagination.Direction{
+		"":       pagination.Ascending,
+		"asc":    pagination.Ascending,
+		"DESC":   pagination.Descending,
+		" desc ": pagination.Descending,
+	}
+
+	for input, want := range tests {
+		got, err := pagination.ParseDirection(input, pagination.Ascending)
+		if err != nil {
+			t.Errorf("ParseDirection(%q) returned error: %v", input, err)
+		}
+		if got != want {
+			t.Errorf("ParseDirection(%q) = %q, want %q", input, got, want)
+		}
+	}
+
+	if _, err := pagination.ParseDirection("sideways", pagination.Ascending); err == nil {
+		t.Error("ParseDirection accepted an unknown direction, want an error")
+	}
+}
+
+func TestDirectionSQL(t *testing.T) {
+	if pagination.Ascending.Comparison() != ">" || pagination.Ascending.SQL() != "ASC" {
+		t.Error("ascending direction produced the wrong SQL")
+	}
+	if pagination.Descending.Comparison() != "<" || pagination.Descending.SQL() != "DESC" {
+		t.Error("descending direction produced the wrong SQL")
+	}
+}
+
+func TestCursorCarriesTheSortValue(t *testing.T) {
+	cursor := pagination.Cursor{Key: "P-1", Sort: "5"}
+
+	decoded, err := pagination.Decode(pagination.Encode(cursor))
+	if err != nil {
+		t.Fatalf("Decode() returned error: %v", err)
+	}
+	if decoded.Sort != "5" {
+		t.Errorf("Sort = %q, want it preserved", decoded.Sort)
+	}
+}

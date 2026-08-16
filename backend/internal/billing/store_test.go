@@ -3,19 +3,40 @@ package billing_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thiagodias/korp-invoices/internal/billing"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres/pgtest"
 )
+
+// testPools keeps the pool of each test at hand, so a test can seed or age
+// rows without the store getting in the way.
+var testPools = map[context.Context]*pgxpool.Pool{}
 
 func newTestStore(t *testing.T) (context.Context, *billing.Store) {
 	t.Helper()
 
 	ctx, pool := pgtest.Pool(t, "BILLING_TEST_DATABASE_URL", billing.MigrationsFS, billing.MigrationsDir)
+	testPools[ctx] = pool
+	t.Cleanup(func() { delete(testPools, ctx) })
+
 	return ctx, billing.NewStore(pool)
+}
+
+func poolOf(t *testing.T, ctx context.Context) *pgxpool.Pool {
+	t.Helper()
+
+	pool, ok := testPools[ctx]
+	if !ok {
+		t.Fatal("no pool for this test")
+	}
+	return pool
 }
 
 func sampleItems() []billing.Item {
@@ -147,7 +168,7 @@ func TestStoreListFiltersByStatus(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	open, err := store.List(ctx, billing.Query{Status: string(billing.StatusOpen)})
+	open, err := store.List(ctx, billing.Query{Statuses: []string{string(billing.StatusOpen)}})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
@@ -155,7 +176,7 @@ func TestStoreListFiltersByStatus(t *testing.T) {
 		t.Errorf("open invoices = %d, want 1", len(open.Items))
 	}
 
-	closed, err := store.List(ctx, billing.Query{Status: string(billing.StatusClosed)})
+	closed, err := store.List(ctx, billing.Query{Statuses: []string{string(billing.StatusClosed)}})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
@@ -305,4 +326,289 @@ func numbersOf(invoices []billing.Invoice) []int64 {
 		numbers = append(numbers, invoice.Number)
 	}
 	return numbers
+}
+
+func createInvoiceWith(t *testing.T, ctx context.Context, store *billing.Store, code string, quantity int) billing.Invoice {
+	t.Helper()
+
+	invoice, err := store.Create(ctx, []billing.Item{
+		{ProductID: uuid.New(), ProductCode: code, ProductDescription: "Product " + code, Quantity: quantity},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	return invoice
+}
+
+func TestStoreListFiltersByNumber(t *testing.T) {
+	ctx, store := newTestStore(t)
+	for range 3 {
+		createInvoiceWith(t, ctx, store, "P-1", 1)
+	}
+
+	number := int64(2)
+	page, err := store.List(ctx, billing.Query{Number: &number})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Number != 2 {
+		t.Errorf("page = %v, want only invoice 2", numbersOf(page.Items))
+	}
+}
+
+func TestStoreListFiltersBySeveralStatusesAtOnce(t *testing.T) {
+	ctx, store := newTestStore(t)
+	open := createInvoiceWith(t, ctx, store, "P-1", 1)
+	printing := createInvoiceWith(t, ctx, store, "P-1", 1)
+	if _, err := store.StartPrinting(ctx, printing.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	page, err := store.List(ctx, billing.Query{Statuses: []string{"OPEN", "PRINTING"}})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 2 {
+		t.Fatalf("page = %v, want both invoices", numbersOf(page.Items))
+	}
+
+	onlyPrinting, err := store.List(ctx, billing.Query{Statuses: []string{"PRINTING"}})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(onlyPrinting.Items) != 1 || onlyPrinting.Items[0].ID != printing.ID {
+		t.Errorf("page = %v, want the invoice being printed", numbersOf(onlyPrinting.Items))
+	}
+	_ = open
+}
+
+func TestStoreListFiltersByIssueDate(t *testing.T) {
+	ctx, store := newTestStore(t)
+	old := createInvoiceWith(t, ctx, store, "P-1", 1)
+	recent := createInvoiceWith(t, ctx, store, "P-1", 1)
+
+	// Age the first invoice so the two fall on different days.
+	pool := poolOf(t, ctx)
+	if _, err := pool.Exec(ctx, `UPDATE invoices SET created_at = now() - interval '10 days' WHERE id = $1`, old.ID); err != nil {
+		t.Fatalf("age invoice: %v", err)
+	}
+
+	from := time.Now().Add(-24 * time.Hour)
+	page, err := store.List(ctx, billing.Query{CreatedFrom: &from})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != recent.ID {
+		t.Errorf("page = %v, want only the recent invoice", numbersOf(page.Items))
+	}
+
+	to := time.Now().Add(-48 * time.Hour)
+	older, err := store.List(ctx, billing.Query{CreatedTo: &to})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(older.Items) != 1 || older.Items[0].ID != old.ID {
+		t.Errorf("page = %v, want only the old invoice", numbersOf(older.Items))
+	}
+}
+
+func TestStoreListFindsTheInvoicesThatUsedAProduct(t *testing.T) {
+	ctx, store := newTestStore(t)
+	wanted := billing.Item{
+		ProductID:          uuid.New(),
+		ProductCode:        "BOLT-1",
+		ProductDescription: "Steel bolt",
+		Quantity:           2,
+	}
+
+	withProduct, err := store.Create(ctx, []billing.Item{wanted})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	createInvoiceWith(t, ctx, store, "HAMMER-1", 1)
+
+	byID, err := store.List(ctx, billing.Query{ProductID: &wanted.ProductID})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(byID.Items) != 1 || byID.Items[0].ID != withProduct.ID {
+		t.Errorf("page = %v, want the invoice that used the product", numbersOf(byID.Items))
+	}
+
+	byCode, err := store.List(ctx, billing.Query{ProductCode: "bolt-1"})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(byCode.Items) != 1 || byCode.Items[0].ID != withProduct.ID {
+		t.Errorf("page = %v, want the lookup by code to ignore casing", numbersOf(byCode.Items))
+	}
+}
+
+// An invoice with two lines of the same product must not come back twice.
+func TestStoreListDoesNotRepeatInvoicesWithSeveralItems(t *testing.T) {
+	ctx, store := newTestStore(t)
+	first := uuid.New()
+	second := uuid.New()
+
+	if _, err := store.Create(ctx, []billing.Item{
+		{ProductID: first, ProductCode: "P-1", ProductDescription: "One", Quantity: 1},
+		{ProductID: second, ProductCode: "P-2", ProductDescription: "Two", Quantity: 1},
+	}); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	page, err := store.List(ctx, billing.Query{})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Errorf("page = %v, want a single invoice", numbersOf(page.Items))
+	}
+}
+
+func TestStoreListSeparatesInvoicesThatNeedAttention(t *testing.T) {
+	ctx, store := newTestStore(t)
+	healthy := createInvoiceWith(t, ctx, store, "P-1", 1)
+	failed := createInvoiceWith(t, ctx, store, "P-2", 1)
+
+	if _, err := store.StartPrinting(ctx, failed.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+	if _, err := store.ReopenStalePrintings(ctx, 0, "print_timeout", "No answer in time."); err != nil {
+		t.Fatalf("ReopenStalePrintings() returned error: %v", err)
+	}
+
+	yes := true
+	needAttention, err := store.List(ctx, billing.Query{HasFailure: &yes})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(needAttention.Items) != 1 || needAttention.Items[0].ID != failed.ID {
+		t.Errorf("page = %v, want the invoice whose print failed", numbersOf(needAttention.Items))
+	}
+
+	no := false
+	fine, err := store.List(ctx, billing.Query{HasFailure: &no})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(fine.Items) != 1 || fine.Items[0].ID != healthy.ID {
+		t.Errorf("page = %v, want the invoice with nothing wrong", numbersOf(fine.Items))
+	}
+}
+
+func TestStoreListCombinesFiltersAndPaging(t *testing.T) {
+	ctx, store := newTestStore(t)
+	for range 5 {
+		createInvoiceWith(t, ctx, store, "BOLT-1", 1)
+	}
+	createInvoiceWith(t, ctx, store, "HAMMER-1", 1)
+
+	query := billing.Query{Statuses: []string{"OPEN"}, ProductCode: "BOLT-1", Limit: 2}
+
+	first, err := store.List(ctx, query)
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(first.Items) != 2 || first.NextCursor == "" {
+		t.Fatalf("first page = %v, want two invoices and a cursor", numbersOf(first.Items))
+	}
+
+	query.Cursor = first.NextCursor
+	second, err := store.List(ctx, query)
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+
+	query.Cursor = second.NextCursor
+	third, err := store.List(ctx, query)
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+
+	seen := append(append(numbersOf(first.Items), numbersOf(second.Items)...), numbersOf(third.Items)...)
+	if len(seen) != 5 {
+		t.Errorf("paged through %v, want the five bolt invoices and not the hammer one", seen)
+	}
+	if third.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want it empty after the last match", third.NextCursor)
+	}
+}
+
+func TestStoreListReadsTheOldestFirstWhenAsked(t *testing.T) {
+	ctx, store := newTestStore(t)
+	for range 3 {
+		createInvoiceWith(t, ctx, store, "P-1", 1)
+	}
+
+	page, err := store.List(ctx, billing.Query{Order: pagination.Ascending, Limit: 2})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if numbers := numbersOf(page.Items); len(numbers) != 2 || numbers[0] != 1 || numbers[1] != 2 {
+		t.Fatalf("page = %v, want invoices 1 and 2", numbers)
+	}
+
+	next, err := store.List(ctx, billing.Query{Order: pagination.Ascending, Limit: 2, Cursor: page.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if numbers := numbersOf(next.Items); len(numbers) != 1 || numbers[0] != 3 {
+		t.Errorf("second page = %v, want invoice 3", numbers)
+	}
+}
+
+// Filtering a long history must still read a single page.
+func TestStoreListReadsOnlyOnePageOfALongHistory(t *testing.T) {
+	ctx, store := newTestStore(t)
+	pool := poolOf(t, ctx)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO invoices (status, created_at)
+		SELECT CASE WHEN number % 3 = 0 THEN 'CLOSED' ELSE 'OPEN' END,
+		       now() - (number || ' minutes')::interval
+		FROM generate_series(1, 5000) AS number`); err != nil {
+		t.Fatalf("seed invoices: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE invoices`); err != nil {
+		t.Fatalf("analyze invoices: %v", err)
+	}
+
+	page, err := store.List(ctx, billing.Query{Statuses: []string{"OPEN"}, Limit: 20})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 20 {
+		t.Fatalf("page = %d invoices, want 20 out of thousands", len(page.Items))
+	}
+
+	plan := explain(t, ctx, pool, `
+		SELECT id FROM invoices
+		WHERE TRUE AND status = ANY(ARRAY['OPEN'])
+		ORDER BY number DESC
+		LIMIT 21`)
+	if strings.Contains(plan, "Seq Scan") {
+		t.Errorf("filtering by status reads every invoice:\n%s", plan)
+	}
+}
+
+func explain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string) string {
+	t.Helper()
+
+	rows, err := pool.Query(ctx, "EXPLAIN "+statement)
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("read plan: %v", err)
+		}
+		plan.WriteString(line)
+		plan.WriteString("\n")
+	}
+	return plan.String()
 }

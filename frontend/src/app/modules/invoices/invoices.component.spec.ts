@@ -168,4 +168,131 @@ describe('InvoicesComponent', () => {
     expect(component.items().map((invoice) => invoice.number)).toEqual([2]);
     expect(component.hasMore()).toBe(false);
   });
+
+  it('should look up a single invoice by number', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.numberControl.setValue('42');
+    component.applyFilters();
+
+    const filtered = http.expectOne((request) => request.params.get('number') === '42');
+    filtered.flush({ items: [invoicePayload('i-42', 42, 'CLOSED')] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.items().map((invoice) => invoice.number)).toEqual([42]);
+  });
+
+  it('should filter by the period the invoices were issued in', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.fromControl.setValue('2026-08-01');
+    component.toControl.setValue('2026-08-31');
+    component.applyFilters();
+
+    const filtered = http.expectOne(
+      (request) =>
+        request.params.get('created_from') === '2026-08-01' && request.params.get('created_to') === '2026-08-31',
+    );
+    filtered.flush({ items: [] });
+    await fixture.whenStable();
+  });
+
+  it('should list the invoices that used a product', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.productCodeControl.setValue('BOLT-1');
+    component.applyFilters();
+
+    http.expectOne((request) => request.params.get('product_code') === 'BOLT-1').flush({ items: [] });
+    await fixture.whenStable();
+  });
+
+  it('should show only the invoices that need attention', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.toggleNeedsAttention();
+
+    const filtered = http.expectOne((request) => request.params.get('has_failure') === 'true');
+    filtered.flush({
+      items: [
+        invoicePayload('i-1', 1, 'OPEN', {
+          failure: { code: 'insufficient_balance', message: 'Product balance is not enough.' },
+        }),
+      ],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.needsAttentionOnly()).toBe(true);
+    expect(text()).toContain('Product balance is not enough.');
+  });
+
+  it('should combine the status filter with the others', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.selectFilter('OPEN');
+    http.expectOne((request) => request.params.get('status') === 'OPEN').flush({ items: [] });
+    await fixture.whenStable();
+
+    component.productCodeControl.setValue('BOLT-1');
+    component.applyFilters();
+
+    const combined = http.expectOne(
+      (request) => request.params.get('status') === 'OPEN' && request.params.get('product_code') === 'BOLT-1',
+    );
+    combined.flush({ items: [] });
+    await fixture.whenStable();
+  });
+
+  it('should clear every filter at once', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.numberControl.setValue('42');
+    component.toggleNeedsAttention();
+    http.expectOne((request) => request.params.has('has_failure')).flush({ items: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.hasActiveFilters()).toBe(true);
+
+    component.clearFilters();
+
+    const cleared = http.expectOne(
+      (request) => request.url === invoicesUrl && !request.params.has('has_failure') && !request.params.has('number'),
+    );
+    cleared.flush({ items: [] });
+    await fixture.whenStable();
+
+    expect(component.hasActiveFilters()).toBe(false);
+  });
+
+  it('should keep the filters while paging', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.productCodeControl.setValue('BOLT-1');
+    component.applyFilters();
+    http
+      .expectOne((request) => request.params.get('product_code') === 'BOLT-1')
+      .flush({
+        items: [invoicePayload('i-5', 5, 'OPEN')],
+        next_cursor: 'cursor-5',
+      });
+    await fixture.whenStable();
+
+    component.loadMore();
+
+    const next = http.expectOne(
+      (request) => request.params.get('cursor') === 'cursor-5' && request.params.get('product_code') === 'BOLT-1',
+    );
+    next.flush({ items: [] });
+    await fixture.whenStable();
+  });
 });

@@ -93,9 +93,16 @@ func (r *memoryRepository) List(ctx context.Context, query stock.Query) (stock.P
 		matches := query.Search == "" ||
 			strings.Contains(strings.ToLower(product.Code), strings.ToLower(query.Search)) ||
 			strings.Contains(strings.ToLower(product.Description), strings.ToLower(query.Search))
-		if matches {
-			products = append(products, product)
+		if !matches {
+			continue
 		}
+		if query.MinBalance != nil && product.Balance < *query.MinBalance {
+			continue
+		}
+		if query.MaxBalance != nil && product.Balance > *query.MaxBalance {
+			continue
+		}
+		products = append(products, product)
 	}
 	slices.SortFunc(products, func(a, b stock.Product) int {
 		return strings.Compare(strings.ToUpper(a.Code), strings.ToUpper(b.Code))
@@ -309,8 +316,8 @@ func TestListProductsEndpointRejectsLongSearch(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
-	if got := errorCode(t, recorder); got != "invalid_search" {
-		t.Errorf("error code = %q, want %q", got, "invalid_search")
+	if got := errorCode(t, recorder); got != "invalid_filter" {
+		t.Errorf("error code = %q, want %q", got, "invalid_filter")
 	}
 }
 

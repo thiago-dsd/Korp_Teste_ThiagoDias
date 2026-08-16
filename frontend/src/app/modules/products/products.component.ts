@@ -7,7 +7,7 @@ import { Subject, catchError, debounceTime, distinctUntilChanged, of, startWith,
 
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { NewProduct, Product } from 'src/app/core/models/product.model';
-import { ProductService } from 'src/app/core/services/product.service';
+import { ProductFilters, ProductService } from 'src/app/core/services/product.service';
 import { ProductFormComponent } from './product-form.component';
 
 /** How long the screen waits after a keystroke before searching. */
@@ -27,6 +27,11 @@ export class ProductsComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly searchControl = new FormControl('', { nonNullable: true });
+
+  /** Only what is out of stock, which is what a replenishment run looks for. */
+  readonly outOfStockOnly = signal(false);
+  /** Lowest balance first, to see what needs attention. */
+  readonly lowestBalanceFirst = signal(false);
 
   readonly items = signal<Product[]>([]);
   readonly loading = signal(false);
@@ -67,12 +72,23 @@ export class ProductsComponent implements OnInit {
       .subscribe();
   }
 
-  /** Reads the first page of the catalogue for a search term. */
+  /** The filters currently applied to the listing. */
+  private currentFilters(search = this.searchControl.value): ProductFilters {
+    // Defaults are left out of the request, so the URL only carries what was
+    // actually asked for.
+    return {
+      search,
+      maxBalance: this.outOfStockOnly() ? 0 : undefined,
+      sort: this.lowestBalanceFirst() ? 'balance' : undefined,
+    };
+  }
+
+  /** Reads the first page of the catalogue for the current filters. */
   private fetch(search: string) {
     this.loading.set(true);
     this.loadFailure.set(null);
 
-    return this.products.list(search).pipe(
+    return this.products.list(this.currentFilters(search)).pipe(
       tap((page) => {
         this.items.set(page.items);
         this.nextCursor.set(page.nextCursor);
@@ -96,7 +112,7 @@ export class ProductsComponent implements OnInit {
     this.loadingMore.set(true);
 
     this.products
-      .list(this.searchControl.value, cursor)
+      .list(this.currentFilters(), cursor)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (page) => {
@@ -109,6 +125,18 @@ export class ProductsComponent implements OnInit {
           this.loadFailure.set(error);
         },
       });
+  }
+
+  /** Turns the out of stock filter on or off and reads the listing again. */
+  toggleOutOfStock(): void {
+    this.outOfStockOnly.update((only) => !only);
+    this.reload.next();
+  }
+
+  /** Switches between catalogue order and lowest balance first. */
+  toggleLowestBalanceFirst(): void {
+    this.lowestBalanceFirst.update((lowest) => !lowest);
+    this.reload.next();
   }
 
   openCreateForm(): void {

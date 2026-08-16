@@ -177,4 +177,66 @@ describe('ProductsComponent', () => {
     next.flush({ items: [] });
     await fixture.whenStable();
   });
+
+  it('should ask only for what is out of stock when that filter is on', async () => {
+    http.expectOne(baseUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.toggleOutOfStock();
+
+    const filtered = http.expectOne((request) => request.params.get('max_balance') === '0');
+    filtered.flush({ items: [productPayload('p-1', 'P-1', 'Empty', 0)] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.outOfStockOnly()).toBe(true);
+    expect(component.items().length).toBe(1);
+  });
+
+  it('should order by balance when asked for what is running out', async () => {
+    http.expectOne(baseUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.toggleLowestBalanceFirst();
+
+    http.expectOne((request) => request.params.get('sort') === 'balance').flush({ items: [] });
+    await fixture.whenStable();
+  });
+
+  it('should keep the filters while paging', async () => {
+    http.expectOne(baseUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.toggleOutOfStock();
+    http
+      .expectOne((request) => request.params.get('max_balance') === '0')
+      .flush({
+        items: [productPayload('p-1', 'P-1', 'Empty', 0)],
+        next_cursor: 'cursor-1',
+      });
+    await fixture.whenStable();
+
+    component.loadMore();
+
+    const next = http.expectOne(
+      (request) => request.params.get('cursor') === 'cursor-1' && request.params.get('max_balance') === '0',
+    );
+    next.flush({ items: [] });
+    await fixture.whenStable();
+  });
+
+  it('should combine the search with the stock filter', async () => {
+    http.expectOne(baseUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.searchControl.setValue('bolt');
+    component.toggleOutOfStock();
+
+    const combined = http.match(
+      (request) => request.params.get('search') === 'bolt' && request.params.get('max_balance') === '0',
+    );
+    expect(combined.length).toBeGreaterThan(0);
+    combined.forEach((request) => request.flush({ items: [] }));
+    await fixture.whenStable();
+  });
 });

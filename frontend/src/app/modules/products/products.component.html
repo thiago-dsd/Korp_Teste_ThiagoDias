@@ -15,14 +15,33 @@
     </button>
   </div>
 
-  <div class="max-w-sm">
-    <label for="product-search" class="sr-only">Search products</label>
-    <input
-      id="product-search"
-      type="search"
-      [formControl]="searchControl"
-      placeholder="Search by code or description"
-      class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+  <div class="flex flex-wrap items-center gap-3">
+    <div class="max-w-sm flex-1">
+      <label for="product-search" class="sr-only">Search products</label>
+      <input
+        id="product-search"
+        type="search"
+        [formControl]="searchControl"
+        placeholder="Search by code or description"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+    </div>
+
+    <button
+      type="button"
+      (click)="toggleOutOfStock()"
+      [attr.aria-pressed]="outOfStockOnly()"
+      class="rounded-md px-3 py-2 text-xs font-semibold"
+      [class]="outOfStockOnly() ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'">
+      Out of stock only
+    </button>
+    <button
+      type="button"
+      (click)="toggleLowestBalanceFirst()"
+      [attr.aria-pressed]="lowestBalanceFirst()"
+      class="rounded-md px-3 py-2 text-xs font-semibold"
+      [class]="lowestBalanceFirst() ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'">
+      Lowest balance first
+    </button>
   </div>
 
   @if (loadFailure(); as error) {

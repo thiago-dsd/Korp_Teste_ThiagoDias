@@ -115,9 +115,16 @@ func (r *memoryInvoices) List(ctx context.Context, query billing.Query) (billing
 
 	invoices := make([]billing.Invoice, 0, len(r.invoices))
 	for _, invoice := range r.invoices {
-		if query.Status == "" || string(invoice.Status) == query.Status {
-			invoices = append(invoices, invoice)
+		if len(query.Statuses) > 0 && !slices.Contains(query.Statuses, string(invoice.Status)) {
+			continue
 		}
+		if query.Number != nil && invoice.Number != *query.Number {
+			continue
+		}
+		if query.HasFailure != nil && (invoice.FailureCode != "") != *query.HasFailure {
+			continue
+		}
+		invoices = append(invoices, invoice)
 	}
 	slices.SortFunc(invoices, func(a, b billing.Invoice) int { return int(b.Number - a.Number) })
 
@@ -470,8 +477,8 @@ func TestListInvoicesEndpointRejectsUnknownStatus(t *testing.T) {
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
 	}
-	if got := errorCode(t, recorder); got != "invalid_invoice" {
-		t.Errorf("error code = %q, want %q", got, "invalid_invoice")
+	if got := errorCode(t, recorder); got != "invalid_filter" {
+		t.Errorf("error code = %q, want %q", got, "invalid_filter")
 	}
 }
 

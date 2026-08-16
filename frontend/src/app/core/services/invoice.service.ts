@@ -16,6 +16,21 @@ export const PRINT_POLL_INTERVAL = new InjectionToken<number>('PRINT_POLL_INTERV
   factory: () => 1000,
 });
 
+/** Filters the invoice listing accepts. */
+export interface InvoiceFilters {
+  /** Several states at once, which is how "not closed yet" is asked for. */
+  statuses?: InvoiceStatus[];
+  /** Finds one invoice by its number. */
+  number?: number;
+  /** Dates as YYYY-MM-DD; the end date covers the whole day. */
+  createdFrom?: string;
+  createdTo?: string;
+  /** Lists the invoices that used a product. */
+  productCode?: string;
+  /** Separates the invoices whose last print attempt failed. */
+  hasFailure?: boolean;
+}
+
 /** Invoice as it travels on the wire. */
 interface InvoicePayload {
   id: string;
@@ -67,15 +82,30 @@ export class InvoiceService {
   private readonly baseUrl = `${environment.billingApiUrl}/invoices`;
 
   /**
-   * Reads a page of invoices, newest first, optionally filtered by status.
+   * Reads a page of invoices, newest first, for the given filters.
    *
    * Pass the cursor of the previous page to read the next one; an empty cursor
    * in the answer means there is nothing left.
    */
-  list(status: InvoiceStatus | '' = '', cursor = ''): Observable<Page<Invoice>> {
+  list(filters: InvoiceFilters = {}, cursor = ''): Observable<Page<Invoice>> {
     let params = new HttpParams();
-    if (status) {
-      params = params.set('status', status);
+    if (filters.statuses?.length) {
+      params = params.set('status', filters.statuses.join(','));
+    }
+    if (filters.number !== undefined) {
+      params = params.set('number', filters.number);
+    }
+    if (filters.createdFrom) {
+      params = params.set('created_from', filters.createdFrom);
+    }
+    if (filters.createdTo) {
+      params = params.set('created_to', filters.createdTo);
+    }
+    if (filters.productCode?.trim()) {
+      params = params.set('product_code', filters.productCode.trim());
+    }
+    if (filters.hasFailure !== undefined) {
+      params = params.set('has_failure', filters.hasFailure);
     }
     if (cursor) {
       params = params.set('cursor', cursor);

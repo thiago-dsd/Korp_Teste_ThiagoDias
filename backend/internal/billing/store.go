@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -83,16 +83,6 @@ func (s *Store) GetByID(ctx context.Context, id uuid.UUID) (Invoice, error) {
 	return invoice, nil
 }
 
-// Query describes a page of invoices.
-type Query struct {
-	// Status filters the listing when it is not empty.
-	Status string
-	// Limit is how many invoices to return.
-	Limit int
-	// Cursor points at the end of the previous page.
-	Cursor string
-}
-
 // Page is a slice of the listing plus how to ask for the next one.
 type Page struct {
 	Items []Invoice
@@ -100,34 +90,85 @@ type Page struct {
 	NextCursor string
 }
 
-// List returns a page of invoices, from the newest number to the oldest.
+// List returns a page of invoices.
 //
-// Pages are cut by invoice number instead of by an offset, so invoices issued
-// while someone is paging do not push items from one page to the next.
+// Every filter is applied by the database in one parameterized query, and the
+// page is cut by the invoice number, so filtering a year of invoices costs the
+// same as filtering a week and nothing is read into memory beyond the page
+// being served.
 func (s *Store) List(ctx context.Context, query Query) (Page, error) {
 	limit := pagination.NormalizeLimit(query.Limit)
+	if query.Order == "" {
+		query.Order = pagination.Descending
+	}
 
 	cursor, err := pagination.Decode(query.Cursor)
 	if err != nil {
 		return Page{}, err
 	}
 
-	// An empty cursor starts above the highest number in use.
-	before := int64(math.MaxInt64)
+	conditions := []string{"TRUE"}
+	arguments := []any{}
+
+	appendCondition := func(format string, values ...any) {
+		placeholders := make([]any, 0, len(values))
+		for _, value := range values {
+			arguments = append(arguments, value)
+			placeholders = append(placeholders, len(arguments))
+		}
+		conditions = append(conditions, fmt.Sprintf(format, placeholders...))
+	}
+
+	if len(query.Statuses) > 0 {
+		appendCondition("status = ANY($%d)", query.Statuses)
+	}
+	if query.Number != nil {
+		appendCondition("number = $%d", *query.Number)
+	}
+	if query.CreatedFrom != nil {
+		appendCondition("created_at >= $%d", *query.CreatedFrom)
+	}
+	if query.CreatedTo != nil {
+		appendCondition("created_at <= $%d", *query.CreatedTo)
+	}
+	if query.HasFailure != nil {
+		if *query.HasFailure {
+			conditions = append(conditions, "failure_code IS NOT NULL")
+		} else {
+			conditions = append(conditions, "failure_code IS NULL")
+		}
+	}
+	// Finding the invoices that used a product is a question about the items,
+	// answered with an EXISTS so an invoice is never returned twice.
+	if query.ProductID != nil {
+		appendCondition(`EXISTS (
+			SELECT 1 FROM invoice_items
+			WHERE invoice_items.invoice_id = invoices.id AND invoice_items.product_id = $%d)`, *query.ProductID)
+	}
+	if query.ProductCode != "" {
+		appendCondition(`EXISTS (
+			SELECT 1 FROM invoice_items
+			WHERE invoice_items.invoice_id = invoices.id
+			  AND upper(invoice_items.product_code) = upper($%d))`, query.ProductCode)
+	}
+
 	if cursor.Key != "" {
-		before, err = strconv.ParseInt(cursor.Key, 10, 64)
+		position, err := strconv.ParseInt(cursor.Key, 10, 64)
 		if err != nil {
 			return Page{}, pagination.ErrInvalidCursor.WithCause(err)
 		}
+		appendCondition("number "+query.Order.Comparison()+" $%d", position)
 	}
 
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+invoiceColumns+`
+	arguments = append(arguments, limit+1)
+	statement := fmt.Sprintf(`
+		SELECT %s
 		FROM invoices
-		WHERE ($1 = '' OR status = $1)
-		  AND number < $2
-		ORDER BY number DESC
-		LIMIT $3`, query.Status, before, limit+1)
+		WHERE %s
+		ORDER BY number %s
+		LIMIT $%d`, invoiceColumns, strings.Join(conditions, " AND "), query.Order.SQL(), len(arguments))
+
+	rows, err := s.pool.Query(ctx, statement, arguments...)
 	if err != nil {
 		return Page{}, fmt.Errorf("select invoices: %w", err)
 	}

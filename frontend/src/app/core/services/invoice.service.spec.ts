@@ -67,7 +67,7 @@ describe('InvoiceService', () => {
   });
 
   it('should filter the listing by status', () => {
-    service.list('CLOSED').subscribe();
+    service.list({ statuses: ['CLOSED'] }).subscribe();
     expect(http.expectOne((request) => request.params.get('status') === 'CLOSED').request.method).toBe('GET');
 
     service.list().subscribe();
@@ -86,7 +86,7 @@ describe('InvoiceService', () => {
       });
     expect(page?.nextCursor).toBe('cursor-1');
 
-    service.list('', 'cursor-1').subscribe((result) => (page = result));
+    service.list({}, 'cursor-1').subscribe((result) => (page = result));
     http
       .expectOne((request) => request.params.get('cursor') === 'cursor-1')
       .flush({

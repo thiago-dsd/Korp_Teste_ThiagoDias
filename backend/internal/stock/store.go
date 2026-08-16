@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -94,16 +95,6 @@ func (s *Store) GetByCode(ctx context.Context, code string) (Product, error) {
 	return product, nil
 }
 
-// Query describes a page of the catalogue.
-type Query struct {
-	// Search filters by code and description.
-	Search string
-	// Limit is how many products to return.
-	Limit int
-	// Cursor points at the end of the previous page.
-	Cursor string
-}
-
 // Page is a slice of the catalogue plus how to ask for the next one.
 type Page struct {
 	Items []Product
@@ -111,27 +102,84 @@ type Page struct {
 	NextCursor string
 }
 
-// List returns a page of products ordered by code.
+// List returns a page of the catalogue.
 //
-// The page is cut by the code of the last item rather than by an offset, so
-// products registered while someone is paging never shift the pages that were
-// already read, and the query stays fast on a large catalogue.
+// Filtering, ordering and paging are all done by the database in a single
+// parameterized query: the service never reads more than one page into memory,
+// no matter how large the catalogue is. The page is cut by the value of the
+// column being ordered by, with the code as a tiebreaker, so a product
+// registered while someone is paging never repeats or hides another one.
 func (s *Store) List(ctx context.Context, query Query) (Page, error) {
 	limit := pagination.NormalizeLimit(query.Limit)
+	if query.Sort == "" {
+		query.Sort = SortByCode
+	}
+	if query.Order == "" {
+		query.Order = pagination.Ascending
+	}
 
 	cursor, err := pagination.Decode(query.Cursor)
 	if err != nil {
 		return Page{}, err
 	}
 
+	// Conditions are only added for the filters that were actually asked for.
+	// Writing them as "$1 = '' OR code ILIKE ..." would read the same, but a
+	// condition that is true for every row when the parameter is empty cannot
+	// use an index, so the search would end up reading the whole table.
+	conditions := []string{"TRUE"}
+	arguments := []any{}
+
+	appendCondition := func(format string, values ...any) {
+		placeholders := make([]any, 0, len(values))
+		for _, value := range values {
+			arguments = append(arguments, value)
+			placeholders = append(placeholders, len(arguments))
+		}
+		conditions = append(conditions, fmt.Sprintf(format, placeholders...))
+	}
+
+	if query.Search != "" {
+		// The term is a bound parameter; only the wildcards are ours.
+		appendCondition(`(code ILIKE '%%' || $%d || '%%' OR description ILIKE '%%' || $%[1]d || '%%')`, query.Search)
+	}
+	if query.MinBalance != nil {
+		appendCondition("balance >= $%d", *query.MinBalance)
+	}
+	if query.MaxBalance != nil {
+		appendCondition("balance <= $%d", *query.MaxBalance)
+	}
+
+	comparison := query.Order.Comparison()
+	if cursor.Key != "" {
+		switch query.Sort {
+		case SortByBalance:
+			// Balance repeats, so the cursor compares the pair (balance, code).
+			sortValue, err := strconv.Atoi(cursor.Sort)
+			if err != nil {
+				return Page{}, pagination.ErrInvalidCursor.WithCause(err)
+			}
+			appendCondition("(balance, upper(code)) "+comparison+" ($%d, $%d)", sortValue, cursor.Key)
+		default:
+			appendCondition("upper(code) "+comparison+" $%d", cursor.Key)
+		}
+	}
+
+	orderBy := fmt.Sprintf("upper(code) %s", query.Order.SQL())
+	if query.Sort == SortByBalance {
+		orderBy = fmt.Sprintf("balance %s, upper(code) %s", query.Order.SQL(), query.Order.SQL())
+	}
+
 	// One extra row tells us whether there is another page, without counting.
-	rows, err := s.pool.Query(ctx, `
-		SELECT `+productColumns+`
+	arguments = append(arguments, limit+1)
+	statement := fmt.Sprintf(`
+		SELECT %s
 		FROM products
-		WHERE ($1 = '' OR code ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
-		  AND ($2 = '' OR upper(code) > $2)
-		ORDER BY upper(code)
-		LIMIT $3`, query.Search, cursor.Key, limit+1)
+		WHERE %s
+		ORDER BY %s
+		LIMIT $%d`, productColumns, strings.Join(conditions, " AND "), orderBy, len(arguments))
+
+	rows, err := s.pool.Query(ctx, statement, arguments...)
 	if err != nil {
 		return Page{}, fmt.Errorf("select products: %w", err)
 	}
@@ -153,10 +201,11 @@ func (s *Store) List(ctx context.Context, query Query) (Page, error) {
 	if len(products) > limit {
 		page.Items = products[:limit]
 		last := page.Items[len(page.Items)-1]
-		page.NextCursor = pagination.Encode(pagination.Cursor{
-			Key: strings.ToUpper(last.Code),
-			ID:  last.ID.String(),
-		})
+		next := pagination.Cursor{Key: strings.ToUpper(last.Code), ID: last.ID.String()}
+		if query.Sort == SortByBalance {
+			next.Sort = strconv.Itoa(last.Balance)
+		}
+		page.NextCursor = pagination.Encode(next)
 	}
 	return page, nil
 }

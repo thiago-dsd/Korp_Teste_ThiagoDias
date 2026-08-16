@@ -3,10 +3,12 @@ package stock_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres/pgtest"
 	"github.com/thiagodias/korp-invoices/internal/stock"
 )
@@ -321,4 +323,254 @@ func codesOf(products []stock.Product) []string {
 		codes = append(codes, product.Code)
 	}
 	return codes
+}
+
+func intPtr(value int) *int { return &value }
+
+func TestStoreListFiltersByBalanceRange(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	createProduct(t, ctx, store, "OUT-1", "Out of stock", 0)
+	createProduct(t, ctx, store, "LOW-1", "Almost gone", 2)
+	createProduct(t, ctx, store, "FULL-1", "Plenty", 100)
+
+	// The question this filter exists for: what is out of stock?
+	empty, err := store.List(ctx, stock.Query{MaxBalance: intPtr(0)})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(empty.Items) != 1 || empty.Items[0].Code != "OUT-1" {
+		t.Errorf("out of stock = %v, want OUT-1", codesOf(empty.Items))
+	}
+
+	low, err := store.List(ctx, stock.Query{MaxBalance: intPtr(5)})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(low.Items) != 2 {
+		t.Errorf("running out = %v, want OUT-1 and LOW-1", codesOf(low.Items))
+	}
+
+	stocked, err := store.List(ctx, stock.Query{MinBalance: intPtr(1)})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(stocked.Items) != 2 {
+		t.Errorf("in stock = %v, want LOW-1 and FULL-1", codesOf(stocked.Items))
+	}
+
+	between, err := store.List(ctx, stock.Query{MinBalance: intPtr(1), MaxBalance: intPtr(5)})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(between.Items) != 1 || between.Items[0].Code != "LOW-1" {
+		t.Errorf("between = %v, want LOW-1", codesOf(between.Items))
+	}
+}
+
+func TestStoreListCombinesSearchAndBalance(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	createProduct(t, ctx, store, "B-1", "Steel bolt", 0)
+	createProduct(t, ctx, store, "B-2", "Steel bolt long", 30)
+	createProduct(t, ctx, store, "H-1", "Hammer", 0)
+
+	page, err := store.List(ctx, stock.Query{Search: "bolt", MaxBalance: intPtr(0)})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Code != "B-1" {
+		t.Errorf("filtered = %v, want only the bolt that is out of stock", codesOf(page.Items))
+	}
+}
+
+func TestStoreListSortsByBalance(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	createProduct(t, ctx, store, "A-1", "Plenty", 50)
+	createProduct(t, ctx, store, "B-1", "Almost gone", 1)
+	createProduct(t, ctx, store, "C-1", "Half", 10)
+
+	lowestFirst, err := store.List(ctx, stock.Query{Sort: stock.SortByBalance})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if codes := codesOf(lowestFirst.Items); len(codes) != 3 || codes[0] != "B-1" || codes[2] != "A-1" {
+		t.Errorf("order = %v, want the lowest balance first", codes)
+	}
+
+	highestFirst, err := store.List(ctx, stock.Query{Sort: stock.SortByBalance, Order: pagination.Descending})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if codes := codesOf(highestFirst.Items); codes[0] != "A-1" {
+		t.Errorf("order = %v, want the highest balance first", codes)
+	}
+}
+
+// Sorting by a column that repeats needs the cursor to carry both the balance
+// and the code, or a page boundary between two equal balances loses products.
+func TestStoreListPagesThroughEqualBalances(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	for _, code := range []string{"E-1", "E-2", "E-3", "E-4"} {
+		createProduct(t, ctx, store, code, "Same balance", 7)
+	}
+
+	seen := []string{}
+	cursor := ""
+	for range 4 {
+		page, err := store.List(ctx, stock.Query{Sort: stock.SortByBalance, Limit: 2, Cursor: cursor})
+		if err != nil {
+			t.Fatalf("List() returned error: %v", err)
+		}
+		seen = append(seen, codesOf(page.Items)...)
+		cursor = page.NextCursor
+		if cursor == "" {
+			break
+		}
+	}
+
+	if len(seen) != 4 {
+		t.Fatalf("paged through %v, want every product exactly once", seen)
+	}
+	for index, code := range []string{"E-1", "E-2", "E-3", "E-4"} {
+		if seen[index] != code {
+			t.Errorf("product %d = %q, want %q", index, seen[index], code)
+		}
+	}
+}
+
+func TestStoreListKeepsFiltersAcrossPages(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	createProduct(t, ctx, store, "L-1", "Low one", 1)
+	createProduct(t, ctx, store, "L-2", "Low two", 2)
+	createProduct(t, ctx, store, "F-1", "Full", 90)
+
+	first, err := store.List(ctx, stock.Query{MaxBalance: intPtr(5), Limit: 1})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	second, err := store.List(ctx, stock.Query{MaxBalance: intPtr(5), Limit: 1, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+
+	if len(second.Items) != 1 || second.Items[0].Code != "L-2" {
+		t.Errorf("second page = %v, want L-2", codesOf(second.Items))
+	}
+	if second.NextCursor != "" {
+		t.Error("the filter was lost while paging: the full product came back")
+	}
+}
+
+// The listing must never read the whole table into memory, no matter how many
+// products match the filters.
+func TestStoreListReadsOnlyOnePageOfALargeCatalogue(t *testing.T) {
+	ctx, store, pool := newTestStore(t)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO products (code, description, balance)
+		SELECT 'BULK-' || lpad(number::text, 5, '0'), 'Bulk product ' || number, number % 50
+		FROM generate_series(1, 5000) AS number`); err != nil {
+		t.Fatalf("seed catalogue: %v", err)
+	}
+
+	page, err := store.List(ctx, stock.Query{Limit: 20})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(page.Items) != 20 {
+		t.Fatalf("page = %d products, want 20 out of 5000", len(page.Items))
+	}
+
+	// With statistics in place, the search has to use the trigram index rather
+	// than reading all 5000 rows.
+	if _, err := pool.Exec(ctx, `ANALYZE products`); err != nil {
+		t.Fatalf("analyze products: %v", err)
+	}
+
+	// The listing never falls back to reading the table.
+	listing := explain(t, ctx, pool, `
+		SELECT id, code, description, balance, created_at, updated_at
+		FROM products
+		WHERE TRUE
+		  AND (code ILIKE '%' || 'BULK-042' || '%' OR description ILIKE '%' || 'BULK-042' || '%')
+		ORDER BY upper(code)
+		LIMIT 21`)
+
+	if strings.Contains(listing, "Seq Scan") {
+		t.Errorf("the search reads every product instead of using an index:\n%s", listing)
+	}
+}
+
+// A "contains" search cannot use a plain btree index, so the catalogue carries
+// trigram indexes for it. Whether the planner picks one is a cost decision that
+// depends on the size of the table and on the term, and on a table this size a
+// sequential scan is genuinely cheaper; what this test pins down is that the
+// index is applicable to the search and returns the right rows, which is what
+// makes the plan available once the catalogue grows.
+func TestSearchingTheCatalogueCanUseTheTrigramIndex(t *testing.T) {
+	ctx, store, pool := newTestStore(t)
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO products (code, description, balance)
+		SELECT 'BULK-' || lpad(number::text, 6, '0'), md5(number::text) || ' part', number % 50
+		FROM generate_series(1, 20000) AS number`); err != nil {
+		t.Fatalf("seed catalogue: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE products`); err != nil {
+		t.Fatalf("analyze products: %v", err)
+	}
+
+	var needle string
+	if err := pool.QueryRow(ctx, `SELECT substr(md5('4242'), 1, 8)`).Scan(&needle); err != nil {
+		t.Fatalf("read search term: %v", err)
+	}
+
+	// Taking the table scan away leaves the plan the index makes possible.
+	if _, err := pool.Exec(ctx, `SET enable_seqscan = off`); err != nil {
+		t.Fatalf("disable sequential scans: %v", err)
+	}
+	plan := explain(t, ctx, pool,
+		"SELECT id FROM products WHERE description ILIKE '%' || '"+needle+"' || '%'")
+	if _, err := pool.Exec(ctx, `SET enable_seqscan = on`); err != nil {
+		t.Fatalf("restore sequential scans: %v", err)
+	}
+
+	if !strings.Contains(plan, "products_description_search_idx") {
+		t.Errorf("the trigram index cannot serve a contains search:\n%s", plan)
+	}
+
+	// And the search itself returns what it should.
+	page, err := store.List(ctx, stock.Query{Search: needle, Limit: 5})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	for _, product := range page.Items {
+		if !strings.Contains(product.Description, needle) {
+			t.Errorf("product %q does not match the search term %q", product.Description, needle)
+		}
+	}
+}
+
+// explain returns the query plan as text.
+func explain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement string) string {
+	t.Helper()
+
+	rows, err := pool.Query(ctx, "EXPLAIN "+statement)
+	if err != nil {
+		t.Fatalf("explain: %v", err)
+	}
+	defer rows.Close()
+
+	var plan strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatalf("read plan: %v", err)
+		}
+		plan.WriteString(line)
+		plan.WriteString("\n")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read plan: %v", err)
+	}
+	return plan.String()
 }

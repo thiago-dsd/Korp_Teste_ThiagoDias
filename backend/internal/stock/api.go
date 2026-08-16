@@ -2,23 +2,17 @@ package stock
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
-	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
-const (
-	// maxSearchLength bounds the search term accepted by the listing endpoint.
-	maxSearchLength = 100
-	// maxLookupIDs bounds a single internal lookup, matching the maximum
-	// number of distinct products an invoice may hold.
-	maxLookupIDs = 100
-)
+// maxLookupIDs bounds a single internal lookup, matching the maximum number of
+// distinct products an invoice may hold.
+const maxLookupIDs = 100
 
 // API exposes the stock use cases over HTTP.
 type API struct {
@@ -165,26 +159,13 @@ func (a *API) createProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) listProducts(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-
-	search := strings.TrimSpace(query.Get("search"))
-	if len([]rune(search)) > maxSearchLength {
-		httpx.WriteError(w, r, apperr.Invalid("invalid_search", "Search term is too long.").
-			WithDetails(map[string]string{"search": "must have at most 100 characters"}))
-		return
-	}
-
-	limit, err := pagination.ParseLimit(query.Get("limit"))
+	query, err := ParseQuery(r.URL.Query())
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
 
-	page, err := a.service.ListProducts(r.Context(), Query{
-		Search: search,
-		Limit:  limit,
-		Cursor: query.Get("cursor"),
-	})
+	page, err := a.service.ListProducts(r.Context(), query)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
