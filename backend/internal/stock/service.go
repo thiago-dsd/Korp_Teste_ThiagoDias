@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 )
 
 // ProductRepository is the persistence the service depends on.
@@ -14,6 +15,7 @@ type ProductRepository interface {
 	GetByCode(ctx context.Context, code string) (Product, error)
 	List(ctx context.Context, query Query) (Page, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]Product, error)
+	Adjust(ctx context.Context, adjustments []Adjustment) ([]bulk.Result, error)
 }
 
 // Service holds the stock use cases.

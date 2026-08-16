@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thiagodias/korp-invoices/internal/billing"
 	"github.com/thiagodias/korp-invoices/internal/contracts"
+	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 	"github.com/thiagodias/korp-invoices/internal/platform/messaging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres/pgtest"
 )
@@ -388,5 +389,91 @@ func TestStockResultHandlerRejectsMalformedPayload(t *testing.T) {
 	err := applyResult(t, ctx, pool, contracts.StockDebited, map[string]string{"invoice_id": "not-a-uuid"})
 	if err == nil {
 		t.Error("handler accepted a malformed payload, want an error")
+	}
+}
+
+func TestBulkPrintWritesOneEventPerInvoice(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	service := billing.NewService(store, nil, store)
+
+	ids := make([]uuid.UUID, 0, 3)
+	for range 3 {
+		invoice, err := store.Create(ctx, sampleItems())
+		if err != nil {
+			t.Fatalf("Create() returned error: %v", err)
+		}
+		ids = append(ids, invoice.ID)
+	}
+
+	results, err := service.PrintInvoices(ctx, ids)
+	if err != nil {
+		t.Fatalf("PrintInvoices() returned error: %v", err)
+	}
+	for _, result := range results {
+		if result.Status != bulk.Succeeded {
+			t.Fatalf("result = %+v, want every invoice started", result)
+		}
+	}
+
+	// Each invoice asked for its own debit: the batch is not one event.
+	types := outboxTypes(t, ctx, pool)
+	if len(types) != 3 {
+		t.Fatalf("outbox = %v, want one event per invoice", types)
+	}
+	for _, messageType := range types {
+		if messageType != contracts.InvoicePrintRequested {
+			t.Errorf("event = %q, want %q", messageType, contracts.InvoicePrintRequested)
+		}
+	}
+
+	for _, id := range ids {
+		invoice, err := store.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() returned error: %v", err)
+		}
+		if invoice.Status != billing.StatusPrinting {
+			t.Errorf("invoice %d = %s, want %s", invoice.Number, invoice.Status, billing.StatusPrinting)
+		}
+	}
+}
+
+// A refused invoice in the middle must not leave an event behind, and must not
+// stop the ones after it.
+func TestBulkPrintLeavesNoEventForARefusedInvoice(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	service := billing.NewService(store, nil, store)
+
+	first, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	closed, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	last, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// The middle invoice is already on its way.
+	if _, err := store.StartPrinting(ctx, closed.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	results, err := service.PrintInvoices(ctx, []uuid.UUID{first.ID, closed.ID, last.ID})
+	if err != nil {
+		t.Fatalf("PrintInvoices() returned error: %v", err)
+	}
+	if results[1].Status != bulk.Failed {
+		t.Errorf("result 1 = %+v, want the invoice already printing refused", results[1])
+	}
+	if results[2].Status != bulk.Succeeded {
+		t.Errorf("result 2 = %+v, want the invoice after it started", results[2])
+	}
+
+	// Three events: the one from before the batch, and the two it started.
+	if types := outboxTypes(t, ctx, pool); len(types) != 3 {
+		t.Errorf("outbox = %v, want three events and none for the refused invoice", types)
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
+	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
@@ -27,7 +28,7 @@ var signer *authntest.Signer
 // throttling. The limits themselves have their own tests.
 func testLimits() stock.Limits {
 	generous := ratelimit.Policy{Name: "test", Requests: 10_000, Window: time.Minute, Burst: 10_000}
-	return stock.Limits{Limiter: ratelimit.NewTokenBucket(), Read: generous, Write: generous}
+	return stock.Limits{Limiter: ratelimit.NewTokenBucket(), Read: generous, Write: generous, Bulk: generous}
 }
 
 // memoryRepository is an in-memory ProductRepository for handler tests.
@@ -149,6 +150,52 @@ func (r *memoryRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]st
 		}
 	}
 	return products, nil
+}
+
+// Adjust mirrors what the store does with a valid request: all the movements
+// land or none does. The rules themselves live in the service, so they are
+// checked before this is ever called.
+func (r *memoryRepository) Adjust(ctx context.Context, adjustments []stock.Adjustment) ([]bulk.Result, error) {
+	if r.failWith != nil {
+		return nil, r.failWith
+	}
+
+	results := make([]bulk.Result, len(adjustments))
+	applied := map[uuid.UUID]int{}
+
+	for index, adjustment := range adjustments {
+		product, known := r.products[adjustment.ProductID]
+		if !known {
+			for _, candidate := range r.products {
+				if strings.EqualFold(candidate.Code, adjustment.ProductCode) {
+					product, known = candidate, true
+					break
+				}
+			}
+		}
+		if !known {
+			results[index] = bulk.Failure(index, adjustment.ProductCode, stock.ErrProductNotFound)
+			return results, stock.ErrAdjustmentRejected
+		}
+		if product.Balance+adjustment.Delta < 0 {
+			results[index] = bulk.Failure(index, product.Code, stock.ErrInsufficientBalance)
+			return results, stock.ErrAdjustmentRejected
+		}
+		applied[product.ID] = product.Balance + adjustment.Delta
+		results[index] = bulk.Result{
+			Index:     index,
+			Status:    bulk.Succeeded,
+			ID:        product.ID.String(),
+			Reference: product.Code,
+		}
+	}
+
+	for id, balance := range applied {
+		product := r.products[id]
+		product.Balance = balance
+		r.products[id] = product
+	}
+	return results, nil
 }
 
 func newTestAPI(t *testing.T) (*memoryRepository, http.Handler) {

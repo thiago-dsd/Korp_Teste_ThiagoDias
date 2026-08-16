@@ -126,6 +126,7 @@ func run() error {
 		Read:    cfg.RateLimits.Read,
 		Write:   cfg.RateLimits.Write,
 		AI:      cfg.RateLimits.AI,
+		Bulk:    cfg.RateLimits.Bulk,
 	})
 
 	// Answers from the stock service close or reopen the invoice.

@@ -1,12 +1,14 @@
 package stock
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
+	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
@@ -42,6 +44,81 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits
 	mux.Handle("GET /products", guard(read(http.HandlerFunc(a.listProducts))))
 	mux.Handle("GET /products/{id}", guard(read(http.HandlerFunc(a.getProduct))))
 	mux.Handle("PUT /products/{id}", guard(write(http.HandlerFunc(a.updateProduct))))
+
+	// One bulk call does the work of up to a hundred, so it has its own
+	// allowance instead of spending the ordinary write budget.
+	batch := ratelimit.Middleware(limits.Limiter, limits.Bulk, ratelimit.ByUser)
+	mux.Handle("POST /products/bulk", guard(batch(http.HandlerFunc(a.createProducts))))
+	mux.Handle("POST /products/adjustments", guard(batch(http.HandlerFunc(a.adjustBalances))))
+}
+
+type bulkProductsRequest struct {
+	Items []productRequest `json:"items"`
+}
+
+type adjustmentsRequest struct {
+	Items []adjustmentRequest `json:"items"`
+}
+
+type adjustmentRequest struct {
+	ProductID   *uuid.UUID `json:"product_id,omitempty"`
+	ProductCode string     `json:"product_code,omitempty"`
+	Delta       int        `json:"delta"`
+	Reason      string     `json:"reason,omitempty"`
+}
+
+// createProducts registers several products. Items are independent: a bad row
+// does not stop the good ones, and the answer says which is which.
+func (a *API) createProducts(w http.ResponseWriter, r *http.Request) {
+	var request bulkProductsRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	inputs := make([]ProductInput, 0, len(request.Items))
+	for _, item := range request.Items {
+		inputs = append(inputs, ProductInput{Code: item.Code, Description: item.Description, Balance: item.Balance})
+	}
+
+	results, err := a.service.CreateProducts(r.Context(), inputs)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	bulk.Write(w, r, bulk.NewResponse(false, results))
+}
+
+// adjustBalances applies several stock movements together. They belong to one
+// document, so either all of them land or none does.
+func (a *API) adjustBalances(w http.ResponseWriter, r *http.Request) {
+	var request adjustmentsRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	adjustments := make([]Adjustment, 0, len(request.Items))
+	for _, item := range request.Items {
+		adjustment := Adjustment{ProductCode: item.ProductCode, Delta: item.Delta, Reason: item.Reason}
+		if item.ProductID != nil {
+			adjustment.ProductID = *item.ProductID
+		}
+		adjustments = append(adjustments, adjustment)
+	}
+
+	results, err := a.service.AdjustBalances(r.Context(), adjustments)
+	if err != nil {
+		// A rejected batch still carries the per item answer, so the caller
+		// sees which one stopped it; anything else is an ordinary failure.
+		if errors.Is(err, ErrAdjustmentRejected) {
+			httpx.WriteJSON(w, r, http.StatusConflict, bulk.NewResponse(true, results))
+			return
+		}
+		httpx.WriteError(w, r, err)
+		return
+	}
+	bulk.Write(w, r, bulk.NewResponse(true, results))
 }
 
 // Limits are the policies the endpoints are served under.
@@ -49,6 +126,7 @@ type Limits struct {
 	Limiter ratelimit.Limiter
 	Read    ratelimit.Policy
 	Write   ratelimit.Policy
+	Bulk    ratelimit.Policy
 }
 
 // InternalRoutes registers the endpoints consumed by other services.

@@ -30,7 +30,13 @@ var signer *authntest.Signer
 // throttling. The limits themselves have their own tests.
 func testLimits() billing.Limits {
 	generous := ratelimit.Policy{Name: "test", Requests: 10_000, Window: time.Minute, Burst: 10_000}
-	return billing.Limits{Limiter: ratelimit.NewTokenBucket(), Read: generous, Write: generous, AI: generous}
+	return billing.Limits{
+		Limiter: ratelimit.NewTokenBucket(),
+		Read:    generous,
+		Write:   generous,
+		AI:      generous,
+		Bulk:    generous,
+	}
 }
 
 // memoryInvoices is an in-memory InvoiceRepository for handler tests.

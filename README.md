@@ -114,6 +114,7 @@ for the whole service:
 | Read | 300/min | signed in person | Cheap, and a screen open on a listing makes many calls |
 | Write | 60/min | signed in person | Touches the database and the broker |
 | Assistant | 20/min | signed in person | Paid for on every call |
+| Bulk | 10/min | signed in person | One call can be a hundred writes |
 | Sign in | 30/min | address | Generous on purpose; see below |
 | Public floor | 600/min | address | Bounds unauthenticated traffic |
 
@@ -131,6 +132,36 @@ Every refusal is the usual error envelope with `429`, a `Retry-After` and the `R
 headers, and says nothing about how the limit works. Limits are configured per environment (see
 `.env.example`); the allowance is per instance, so a deployment with several replicas divides
 them.
+
+### Bulk actions
+
+Three operations are worth doing to many resources at once, and they do not all behave the same
+way, because what a failure means differs:
+
+| Endpoint | Items | On failure |
+| --- | --- | --- |
+| `POST /products/bulk` | Independent | The good rows are created; the bad ones say why |
+| `POST /products/adjustments` | One document | Nothing is changed at all |
+| `POST /invoices/print` | Independent | The accepted invoices keep printing |
+
+Importing a catalogue with one malformed line should bring the rest in, so those items stand on
+their own. A delivery note is the opposite: applying half of it leaves the operator unsure what
+landed, and sending it again would count the applied half twice, so every movement is applied in
+one transaction or none is.
+
+Adjustments are signed movements (`delta`), never a new balance. Setting a balance would silently
+undo whatever happened between reading it and writing it — an invoice printed in that moment, for
+instance — while adding to it never loses that. The database does the arithmetic and refuses to go
+below zero, and products are touched in the same order the debit of an invoice uses, so an
+adjustment and a print cannot deadlock each other. Repeating a delivery note is stopped by the
+usual `Idempotency-Key`.
+
+Every call takes at most 100 items and answers with the same shape: whether the items stand or
+fall together, a count to read first, and one compact line per item carrying its position, what
+happened and why. Positions are what line the answer up with the request, so nothing has to be
+matched on values. The status code says which case it is — `200` when everything went through,
+`207` when the fates differed, `409` when an atomic call was rolled back — and the results are
+identities and reasons rather than whole entities, so a hundred items stay readable.
 
 ### Failure scenarios
 

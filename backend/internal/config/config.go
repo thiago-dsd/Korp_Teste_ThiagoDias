@@ -57,6 +57,9 @@ type RateLimits struct {
 	Auth ratelimit.Policy
 	// AI covers the drafting assistant, which costs money per call.
 	AI ratelimit.Policy
+	// Bulk covers the endpoints that touch many resources at once, where one
+	// call does the work of up to a hundred ordinary ones.
+	Bulk ratelimit.Policy
 	// Public bounds unauthenticated traffic per address, as a floor under the
 	// per user limits above.
 	Public ratelimit.Policy
@@ -169,6 +172,7 @@ var defaultRateLimits = RateLimits{
 	// anybody else.
 	Auth:   ratelimit.Policy{Requests: 30, Window: time.Minute, Burst: 10},
 	AI:     ratelimit.Policy{Requests: 20, Window: time.Minute, Burst: 5},
+	Bulk:   ratelimit.Policy{Requests: 10, Window: time.Minute, Burst: 3},
 	Public: ratelimit.Policy{Requests: 600, Window: time.Minute, Burst: 100},
 }
 
@@ -196,6 +200,7 @@ func loadRateLimits(lookup Loader) (RateLimits, []string) {
 		Write:  parse("RATE_LIMIT_WRITE", "RATE_LIMIT_WRITE", defaultRateLimits.Write),
 		Auth:   parse("RATE_LIMIT_AUTH", "RATE_LIMIT_AUTH", defaultRateLimits.Auth),
 		AI:     parse("RATE_LIMIT_AI", "RATE_LIMIT_AI", defaultRateLimits.AI),
+		Bulk:   parse("RATE_LIMIT_BULK", "RATE_LIMIT_BULK", defaultRateLimits.Bulk),
 		Public: parse("RATE_LIMIT_PUBLIC", "RATE_LIMIT_PUBLIC", defaultRateLimits.Public),
 	}, problems
 }

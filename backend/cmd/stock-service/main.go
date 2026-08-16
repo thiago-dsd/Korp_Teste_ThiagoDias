@@ -98,6 +98,7 @@ func run() error {
 		Limiter: limiter,
 		Read:    cfg.RateLimits.Read,
 		Write:   cfg.RateLimits.Write,
+		Bulk:    cfg.RateLimits.Bulk,
 	})
 	api.InternalRoutes(mux, cfg.ServiceToken)
 

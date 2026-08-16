@@ -8,6 +8,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/aiclient"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
+	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
@@ -45,6 +46,33 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits
 	// Drafting is paid for on every call, so it has the tightest allowance.
 	mux.Handle("POST /invoices/draft", guard(assistant(http.HandlerFunc(a.draftInvoice))))
 	mux.Handle("GET /invoices/draft", guard(read(http.HandlerFunc(a.assistantStatus))))
+
+	// One bulk call does the work of up to a hundred, so it has its own
+	// allowance instead of spending the ordinary write budget.
+	batch := ratelimit.Middleware(limits.Limiter, limits.Bulk, ratelimit.ByUser)
+	mux.Handle("POST /invoices/print", guard(batch(http.HandlerFunc(a.printInvoices))))
+}
+
+type bulkPrintRequest struct {
+	InvoiceIDs []uuid.UUID `json:"invoice_ids"`
+}
+
+// printInvoices starts printing several invoices, which is what closing a day
+// of work looks like. Each invoice is independent: one that cannot be printed
+// does not hold back the others, and the answer says which is which.
+func (a *API) printInvoices(w http.ResponseWriter, r *http.Request) {
+	var request bulkPrintRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	results, err := a.service.PrintInvoices(r.Context(), request.InvoiceIDs)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	bulk.Write(w, r, bulk.NewResponse(false, results))
 }
 
 // Limits are the policies the endpoints are served under.
@@ -53,6 +81,7 @@ type Limits struct {
 	Read    ratelimit.Policy
 	Write   ratelimit.Policy
 	AI      ratelimit.Policy
+	Bulk    ratelimit.Policy
 }
 
 type draftRequest struct {
