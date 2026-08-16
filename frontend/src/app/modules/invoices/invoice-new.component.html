@@ -1,0 +1,138 @@
+<div class="space-y-5">
+  <a routerLink="/invoices" class="text-muted-foreground inline-flex items-center gap-1 text-sm hover:underline">
+    <svg-icon src="assets/icons/heroicons/outline/chevron-double-left.svg" [svgClass]="'h-3 w-3'"></svg-icon>
+    Back to invoices
+  </a>
+
+  <div>
+    <h1 class="text-foreground text-xl font-semibold">New invoice</h1>
+    <p class="text-muted-foreground mt-1 text-sm">
+      Add the products and their quantities. The invoice is created open and gets its number from the service.
+    </p>
+  </div>
+
+  @if (catalogueFailure(); as error) {
+    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
+      <p class="text-destructive font-semibold">{{ error.message }}</p>
+      <p class="text-destructive/70 mt-1 text-xs">Products come from the stock service, which is not answering.</p>
+    </div>
+  }
+
+  <form
+    [formGroup]="lineForm"
+    (ngSubmit)="addLine()"
+    class="border-muted grid gap-3 rounded-md border p-4 sm:grid-cols-[1fr_auto_auto]"
+    novalidate>
+    <div>
+      <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">Product</label>
+      <select
+        id="line-product"
+        formControlName="productId"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm">
+        <option value="" disabled>
+          {{ loadingCatalogue() ? 'Loading products…' : 'Select a product' }}
+        </option>
+        @for (product of available(); track product.id) {
+          <option [value]="product.id">{{ product.code }} — {{ product.description }} ({{ product.balance }})</option>
+        }
+      </select>
+    </div>
+
+    <div>
+      <label for="line-quantity" class="text-foreground mb-1 block text-sm font-medium">Quantity</label>
+      <input
+        id="line-quantity"
+        type="number"
+        min="1"
+        step="1"
+        inputmode="numeric"
+        formControlName="quantity"
+        class="border-muted bg-background text-foreground w-24 rounded-md border px-3 py-2 text-sm" />
+    </div>
+
+    <div class="flex items-end">
+      <button
+        type="submit"
+        [disabled]="available().length === 0"
+        class="border-muted text-foreground w-full rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
+        Add product
+      </button>
+    </div>
+  </form>
+
+  <div class="border-muted overflow-x-auto rounded-md border">
+    <table class="w-full text-left text-sm">
+      <caption class="sr-only">
+        Products added to this invoice
+      </caption>
+      <thead class="bg-card text-muted-foreground text-xs uppercase">
+        <tr>
+          <th scope="col" class="px-4 py-3 font-semibold">Code</th>
+          <th scope="col" class="px-4 py-3 font-semibold">Description</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">Quantity</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">In stock</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-muted divide-y">
+        @if (lines().length === 0) {
+          <tr>
+            <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">
+              No products yet. An invoice needs at least one.
+            </td>
+          </tr>
+        } @else {
+          @for (line of lines(); track line.product.id) {
+            <tr>
+              <td class="text-foreground px-4 py-3 font-medium">{{ line.product.code }}</td>
+              <td class="text-muted-foreground px-4 py-3">{{ line.product.description }}</td>
+              <td class="text-foreground px-4 py-3 text-right">{{ line.quantity }}</td>
+              <td
+                class="px-4 py-3 text-right"
+                [class]="
+                  line.quantity > line.product.balance ? 'text-destructive font-semibold' : 'text-muted-foreground'
+                ">
+                {{ line.product.balance }}
+              </td>
+              <td class="px-4 py-3 text-right">
+                <button
+                  type="button"
+                  (click)="removeLine(line.product.id)"
+                  class="text-destructive text-xs font-semibold"
+                  [attr.aria-label]="'Remove ' + line.product.code + ' from the invoice'">
+                  Remove
+                </button>
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (linesOverBalance().length > 0) {
+    <div role="alert" class="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+      <p class="font-semibold text-amber-700">Some quantities are above the current balance</p>
+      <p class="mt-1 text-amber-700/80">
+        The invoice can still be created, but printing it will be refused until the stock is replenished.
+      </p>
+    </div>
+  }
+
+  @if (saveFailure(); as error) {
+    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
+      <p class="text-destructive font-semibold">{{ error.message }}</p>
+    </div>
+  }
+
+  <div class="flex items-center justify-between gap-3">
+    <p class="text-muted-foreground text-sm">Total quantity: {{ totalQuantity() }}</p>
+    <button
+      type="button"
+      (click)="save()"
+      [disabled]="lines().length === 0 || saving()"
+      class="bg-primary text-primary-foreground rounded-md px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
+      {{ saving() ? 'Creating…' : 'Create invoice' }}
+    </button>
+  </div>
+</div>

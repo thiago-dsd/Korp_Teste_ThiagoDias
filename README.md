@@ -8,9 +8,10 @@ debits the stock balances.
 
 ```
 Angular SPA (frontend/)
-   |  HTTP/JSON
-   +--> stock-service    products and balances          -> PostgreSQL (stock)
-   +--> billing-service  invoices and printing          -> PostgreSQL (billing)
+   |  HTTP/JSON, carrying the access token
+   +--> identity-service  accounts and tokens           -> PostgreSQL (identity)
+   +--> stock-service     products and balances         -> PostgreSQL (stock)
+   +--> billing-service   invoices and printing         -> PostgreSQL (billing)
                  \                                  /
                   +----------> RabbitMQ <----------+
                         events published from each
@@ -22,6 +23,23 @@ Angular SPA (frontend/)
   outbox in the same transaction; stock debits the balances and answers with an event; billing
   closes the invoice or reopens it with the reason for the failure.
 - Retries are safe: message consumption and stock debits are idempotent.
+- Products and invoices are only served to a signed in user. Tokens are signed by the identity
+  service with an RSA key and verified by the others through its published public key, so no
+  other service is able to mint one.
+
+### Accounts and sessions
+
+```
+POST /auth/register, /auth/login   ->  access token (15 min) + refresh token (7 days)
+POST /auth/refresh                 ->  rotates the refresh token and issues a new pair
+POST /auth/logout                  ->  ends that session only
+GET  /auth/me, DELETE /auth/me     ->  profile and account deletion (password confirmed)
+GET  /.well-known/jwks.json        ->  public key the other services verify tokens with
+```
+
+Passwords are stored as argon2id hashes. Refresh tokens are stored hashed and rotated on every
+use: replaying one that was already exchanged revokes the whole session, which is what limits the
+damage when a token leaks. Deleting an account removes its sessions with it.
 
 ### Printing an invoice
 
@@ -46,6 +64,8 @@ operators clicking at the same time produce a single debit request.
 | Not enough balance | Nothing is debited, the invoice returns to `OPEN` with `insufficient_balance` |
 | Stock never answers | The invoice is reopened after two minutes explaining the timeout |
 | Repeated request | An `Idempotency-Key` replays the first answer; a redelivered event never debits twice |
+| Access token expired | The application refreshes the session and replays the request without interrupting anyone |
+| Refresh token replayed | The session is revoked on the spot and both the attacker and the client have to sign in again |
 
 The stock service can be made to fail on purpose, which is useful for a demonstration:
 
@@ -67,6 +87,7 @@ curl -X POST localhost:8081/internal/failure-simulation \
 ```bash
 cp .env.example .env     # development defaults, adjust if needed
 make infra-up            # PostgreSQL on :5433 and RabbitMQ on :5672 (UI on :15672)
+make run-identity        # identity-service on :8083
 make run-stock           # stock-service on :8081
 make run-billing         # billing-service on :8082
 cd frontend && npm install && npm start   # Angular app on :4200
@@ -91,8 +112,10 @@ anywhere.
 backend/
   cmd/stock-service      service entry point
   cmd/billing-service    service entry point
+  cmd/identity-service   service entry point
   internal/stock         stock domain, storage and migrations
   internal/billing       billing domain, storage and migrations
+  internal/identity      accounts, passwords and tokens
   internal/config        environment configuration
   internal/platform      shared building blocks (HTTP, PostgreSQL, errors, logging, health)
 frontend/                Angular application

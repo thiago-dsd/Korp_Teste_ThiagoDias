@@ -1,8 +1,13 @@
 import { animate, state, style, transition, trigger } from '@angular/animations';
 import { NgClass } from '@angular/common';
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, DestroyRef, ChangeDetectionStrategy, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
+import { toast } from 'ngx-sonner';
+import { ApiError } from '../../../../../core/models/api-error.model';
+import { AuthService } from '../../../../../core/services/auth.service';
 import { ThemeService } from '../../../../../core/services/theme.service';
 import { ClickOutsideDirective } from '../../../../../shared/directives/click-outside.directive';
 
@@ -10,7 +15,7 @@ import { ClickOutsideDirective } from '../../../../../shared/directives/click-ou
   selector: 'app-profile-menu',
   templateUrl: './profile-menu.component.html',
   styleUrls: ['./profile-menu.component.css'],
-  imports: [ClickOutsideDirective, NgClass, RouterLink, AngularSvgIconModule],
+  imports: [ClickOutsideDirective, NgClass, RouterLink, AngularSvgIconModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.Eager,
   animations: [
     trigger('openClose', [
@@ -35,25 +40,20 @@ import { ClickOutsideDirective } from '../../../../../shared/directives/click-ou
     ]),
   ],
 })
-export class ProfileMenuComponent implements OnInit {
+export class ProfileMenuComponent {
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** Who is signed in, straight from the session. */
+  readonly user = this.auth.currentUser;
+
+  readonly confirmingDeletion = signal(false);
+  readonly deleting = signal(false);
+  readonly deleteFailure = signal<ApiError | null>(null);
+  deletePassword = '';
+
   public isOpen = false;
-  public profileMenu = [
-    {
-      title: 'Your Profile',
-      icon: './assets/icons/heroicons/outline/user-circle.svg',
-      link: '/profile',
-    },
-    {
-      title: 'Settings',
-      icon: './assets/icons/heroicons/outline/cog-6-tooth.svg',
-      link: '/settings',
-    },
-    {
-      title: 'Log out',
-      icon: './assets/icons/heroicons/outline/logout.svg',
-      link: '/auth',
-    },
-  ];
 
   public themeColors = [
     {
@@ -91,7 +91,55 @@ export class ProfileMenuComponent implements OnInit {
 
   constructor(public themeService: ThemeService) {}
 
-  ngOnInit(): void {}
+  /** Ends the session and goes back to the sign in screen. */
+  signOut(): void {
+    this.auth
+      .logout()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.isOpen = false;
+        void this.router.navigate(['/auth/sign-in']);
+      });
+  }
+
+  startAccountDeletion(): void {
+    this.confirmingDeletion.set(true);
+    this.deleteFailure.set(null);
+    this.deletePassword = '';
+  }
+
+  cancelAccountDeletion(): void {
+    this.confirmingDeletion.set(false);
+    this.deletePassword = '';
+    this.deleteFailure.set(null);
+  }
+
+  /** Deletes the account for good, after confirming the password. */
+  confirmAccountDeletion(): void {
+    if (!this.deletePassword) {
+      return;
+    }
+
+    this.deleting.set(true);
+    this.deleteFailure.set(null);
+
+    this.auth
+      .deleteAccount(this.deletePassword)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.deleting.set(false);
+          this.confirmingDeletion.set(false);
+          this.isOpen = false;
+          toast.success('Your account was deleted.', { position: 'bottom-right' });
+          void this.router.navigate(['/auth/sign-in']);
+        },
+        error: (error: ApiError) => {
+          this.deleting.set(false);
+          this.deleteFailure.set(error);
+        },
+      });
+  }
 
   public toggleMenu(): void {
     this.isOpen = !this.isOpen;

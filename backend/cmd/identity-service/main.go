@@ -1,0 +1,125 @@
+// Command identity-service owns accounts and issues the tokens the other
+// services trust.
+package main
+
+import (
+	"context"
+	"crypto/rsa"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/thiagodias/korp-invoices/internal/config"
+	"github.com/thiagodias/korp-invoices/internal/identity"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn"
+	"github.com/thiagodias/korp-invoices/internal/platform/health"
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/logging"
+	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
+)
+
+const serviceName = "identity-service"
+
+func main() {
+	if err := run(); err != nil {
+		slog.Error("service stopped with error", "service", serviceName, "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.FromEnv(serviceName)
+	if err != nil {
+		return err
+	}
+
+	logger := logging.New(os.Stdout, cfg.ServiceName, cfg.LogLevel)
+	slog.SetDefault(logger)
+
+	privateKey, generated, err := identity.LoadOrGeneratePrivateKey(os.Getenv("JWT_PRIVATE_KEY"))
+	if err != nil {
+		return fmt.Errorf("load signing key: %w", err)
+	}
+	if generated {
+		logger.Warn("no JWT_PRIVATE_KEY configured; generated a temporary signing key. " +
+			"Sessions will stop working when this service restarts.")
+	}
+
+	pool, err := postgres.Connect(ctx, cfg.DatabaseURL, postgres.DefaultPoolOptions())
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	if err := postgres.Migrate(ctx, pool, identity.MigrationsFS, identity.MigrationsDir); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
+	logger.Info("database schema is up to date")
+
+	issuer := identity.NewTokenIssuer(privateKey)
+	store := identity.NewStore(pool)
+	service := identity.NewService(store, issuer)
+
+	// The service verifies its own tokens with the key it holds, so it never
+	// calls itself over HTTP.
+	verifier := authn.NewVerifierWithKeys(publicKeysOf(issuer, &privateKey.PublicKey))
+
+	healthHandler := health.NewHandler(cfg.ServiceName, health.Check{Name: "database", Probe: pool.Ping})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health/live", healthHandler.Live)
+	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
+	identity.NewAPI(service, issuer).Routes(mux, verifier)
+
+	// Sessions that expired long ago are of no use to anyone.
+	go cleanUpExpiredTokens(ctx, store, logger)
+
+	// Sign in is the endpoint worth guessing against, so this service is
+	// throttled harder than the others.
+	limiter := httpx.NewRateLimiter(30, time.Minute)
+	handler := httpx.Chain(mux, httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout, limiter)...)
+
+	return httpx.Serve(ctx, httpx.ServerConfig{
+		Addr:            cfg.HTTPAddr,
+		Handler:         handler,
+		Logger:          logger,
+		RequestTimeout:  cfg.RequestTimeout,
+		ShutdownTimeout: cfg.ShutdownTimeout,
+	})
+}
+
+func publicKeysOf(issuer *identity.TokenIssuer, public *rsa.PublicKey) map[string]*rsa.PublicKey {
+	keys := map[string]*rsa.PublicKey{}
+	for _, entry := range issuer.PublicJWKS()["keys"].([]map[string]string) {
+		keys[entry["kid"]] = public
+	}
+	return keys
+}
+
+func cleanUpExpiredTokens(ctx context.Context, store *identity.Store, logger *slog.Logger) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			removed, err := store.DeleteExpiredTokens(ctx)
+			if err != nil {
+				logger.ErrorContext(ctx, "failed to clean up expired refresh tokens", "error", err)
+				continue
+			}
+			if removed > 0 {
+				logger.InfoContext(ctx, "cleaned up expired refresh tokens", "count", removed)
+			}
+		}
+	}
+}

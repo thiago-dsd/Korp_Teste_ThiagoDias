@@ -151,6 +151,24 @@ func TestCORSAllowsConfiguredOriginOnly(t *testing.T) {
 	}
 }
 
+// Without this header the browser blocks every authenticated request.
+func TestCORSAllowsTheAuthorizationHeader(t *testing.T) {
+	handler := CORS([]string{"http://localhost:4200"})(okHandler())
+
+	request := httptest.NewRequest(http.MethodOptions, "/products", nil)
+	request.Header.Set("Origin", "http://localhost:4200")
+	request.Header.Set("Access-Control-Request-Method", "GET")
+	request.Header.Set("Access-Control-Request-Headers", "authorization")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	allowed := recorder.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(strings.ToLower(allowed), "authorization") {
+		t.Errorf("Access-Control-Allow-Headers = %q, want it to allow Authorization", allowed)
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
 	handler := CORS([]string{"http://localhost:4200"})(okHandler())
 

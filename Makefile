@@ -27,7 +27,15 @@ run-stock: ## Run the stock service
 		DATABASE_URL=$(POSTGRES_BASE_URL)/stock?sslmode=disable \
 		RABBITMQ_URL=$(RABBITMQ_URL) \
 		SERVICE_TOKEN=$(SERVICE_TOKEN) \
+		IDENTITY_SERVICE_URL=http://localhost:8083 \
 		go run ./cmd/stock-service
+
+.PHONY: run-identity
+run-identity: ## Run the identity service
+	cd backend && HTTP_ADDR=:8083 \
+		DATABASE_URL=$(POSTGRES_BASE_URL)/identity?sslmode=disable \
+		SERVICE_TOKEN=$(SERVICE_TOKEN) \
+		go run ./cmd/identity-service
 
 .PHONY: run-billing
 run-billing: ## Run the billing service
@@ -36,6 +44,7 @@ run-billing: ## Run the billing service
 		RABBITMQ_URL=$(RABBITMQ_URL) \
 		SERVICE_TOKEN=$(SERVICE_TOKEN) \
 		STOCK_SERVICE_URL=http://localhost:8081 \
+		IDENTITY_SERVICE_URL=http://localhost:8083 \
 		go run ./cmd/billing-service
 
 .PHONY: test-backend
@@ -48,6 +57,7 @@ test-backend-integration: ## Run the Go tests including the database integration
 		TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/stock_test?sslmode=disable \
 		STOCK_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/stock_test?sslmode=disable \
 		BILLING_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/billing_test?sslmode=disable \
+		IDENTITY_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/identity_test?sslmode=disable \
 		MESSAGING_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/messaging_test?sslmode=disable \
 		RABBITMQ_TEST_URL=$(RABBITMQ_URL) \
 		go test ./... -count=1

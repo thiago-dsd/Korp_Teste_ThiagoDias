@@ -71,8 +71,10 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npm start',
+    // `npm start` opens a browser window, which a test run must not do.
+    command: 'npm run start:ci',
     url: 'http://localhost:4200',
+    timeout: 120_000,
     reuseExistingServer: !process.env.CI,
   },
 });

@@ -15,6 +15,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
 	"github.com/thiagodias/korp-invoices/internal/config"
 	"github.com/thiagodias/korp-invoices/internal/contracts"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/health"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/idempotency"
@@ -77,13 +78,17 @@ func run() error {
 	stock := stockclient.New(cfg.StockServiceURL, cfg.ServiceToken)
 	logger.Info("stock service configured", "url", cfg.StockServiceURL)
 
+	// Access tokens are verified with the public key of the identity service.
+	verifier := authn.NewVerifier(cfg.JWKSURL())
+	logger.Info("verifying access tokens", "jwks_url", cfg.JWKSURL())
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", healthHandler.Live)
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
 
 	invoices := billing.NewStore(pool)
 	api := billing.NewAPI(billing.NewService(invoices, stock, invoices))
-	api.Routes(mux)
+	api.Routes(mux, verifier)
 
 	// Answers from the stock service close or reopen the invoice.
 	resultConsumer := messaging.NewConsumer("billing.stock_results", pool, logger,

@@ -1,0 +1,74 @@
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4" novalidate>
+  <div>
+    <label for="product-code" class="text-foreground mb-1 block text-sm font-medium">Code</label>
+    <input
+      id="product-code"
+      type="text"
+      formControlName="code"
+      autocomplete="off"
+      placeholder="P-1"
+      class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm disabled:opacity-60"
+      [attr.aria-invalid]="errorFor('code') ? 'true' : null"
+      [attr.aria-describedby]="errorFor('code') ? 'product-code-error' : null" />
+    @if (isEditing()) {
+      <p class="text-muted-foreground mt-1 text-xs">The code cannot change: invoices already refer to it.</p>
+    }
+    @if (errorFor('code'); as message) {
+      <p id="product-code-error" class="text-destructive mt-1 text-xs">{{ message }}</p>
+    }
+  </div>
+
+  <div>
+    <label for="product-description" class="text-foreground mb-1 block text-sm font-medium">Description</label>
+    <input
+      id="product-description"
+      type="text"
+      formControlName="description"
+      autocomplete="off"
+      placeholder="Steel bolt M8"
+      class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
+      [attr.aria-invalid]="errorFor('description') ? 'true' : null"
+      [attr.aria-describedby]="errorFor('description') ? 'product-description-error' : null" />
+    @if (errorFor('description'); as message) {
+      <p id="product-description-error" class="text-destructive mt-1 text-xs">{{ message }}</p>
+    }
+  </div>
+
+  <div>
+    <label for="product-balance" class="text-foreground mb-1 block text-sm font-medium">Balance</label>
+    <input
+      id="product-balance"
+      type="number"
+      inputmode="numeric"
+      min="0"
+      step="1"
+      formControlName="balance"
+      class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
+      [attr.aria-invalid]="errorFor('balance') ? 'true' : null"
+      [attr.aria-describedby]="errorFor('balance') ? 'product-balance-error' : null" />
+    @if (errorFor('balance'); as message) {
+      <p id="product-balance-error" class="text-destructive mt-1 text-xs">{{ message }}</p>
+    }
+  </div>
+
+  @if (failure(); as error) {
+    <div role="alert" class="border-destructive/40 bg-destructive/10 text-destructive rounded-md border p-3 text-sm">
+      {{ error.message }}
+    </div>
+  }
+
+  <div class="flex justify-end gap-2 pt-2">
+    <button
+      type="button"
+      (click)="cancel.emit()"
+      class="border-muted text-foreground rounded-md border px-4 py-2 text-sm font-semibold">
+      Cancel
+    </button>
+    <button
+      type="submit"
+      [disabled]="saving()"
+      class="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60">
+      {{ saving() ? 'Saving…' : isEditing() ? 'Save changes' : 'Register product' }}
+    </button>
+  </div>
+</form>

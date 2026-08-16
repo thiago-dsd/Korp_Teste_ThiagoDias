@@ -25,6 +25,9 @@ type Config struct {
 	AllowedOrigins []string
 	// StockServiceURL is the base URL of the stock service, used by billing.
 	StockServiceURL string
+	// IdentityServiceURL is where the public keys that verify access tokens
+	// are published.
+	IdentityServiceURL string
 	// RequestTimeout bounds how long a single HTTP request may run.
 	RequestTimeout time.Duration
 	// ShutdownTimeout bounds how long graceful shutdown may take.
@@ -52,14 +55,15 @@ func Load(serviceName string, lookup Loader) (Config, error) {
 	var problems []string
 
 	cfg := Config{
-		ServiceName:     serviceName,
-		HTTPAddr:        stringVar(lookup, "HTTP_ADDR", ":8080"),
-		DatabaseURL:     stringVar(lookup, "DATABASE_URL", ""),
-		RabbitMQURL:     stringVar(lookup, "RABBITMQ_URL", ""),
-		ServiceToken:    stringVar(lookup, "SERVICE_TOKEN", ""),
-		AllowedOrigins:  listVar(lookup, "CORS_ALLOWED_ORIGINS", []string{"http://localhost:4200"}),
-		StockServiceURL: stringVar(lookup, "STOCK_SERVICE_URL", "http://localhost:8081"),
-		LogLevel:        strings.ToLower(stringVar(lookup, "LOG_LEVEL", "info")),
+		ServiceName:        serviceName,
+		HTTPAddr:           stringVar(lookup, "HTTP_ADDR", ":8080"),
+		DatabaseURL:        stringVar(lookup, "DATABASE_URL", ""),
+		RabbitMQURL:        stringVar(lookup, "RABBITMQ_URL", ""),
+		ServiceToken:       stringVar(lookup, "SERVICE_TOKEN", ""),
+		AllowedOrigins:     listVar(lookup, "CORS_ALLOWED_ORIGINS", []string{"http://localhost:4200"}),
+		StockServiceURL:    stringVar(lookup, "STOCK_SERVICE_URL", "http://localhost:8081"),
+		IdentityServiceURL: stringVar(lookup, "IDENTITY_SERVICE_URL", "http://localhost:8083"),
+		LogLevel:           strings.ToLower(stringVar(lookup, "LOG_LEVEL", "info")),
 	}
 
 	requestTimeout, err := durationVar(lookup, "REQUEST_TIMEOUT", 15*time.Second)
@@ -77,7 +81,8 @@ func Load(serviceName string, lookup Loader) (Config, error) {
 	if cfg.DatabaseURL == "" {
 		problems = append(problems, "DATABASE_URL is required")
 	}
-	if cfg.RabbitMQURL == "" {
+	// The identity service does not publish events, so it runs without a broker.
+	if cfg.RabbitMQURL == "" && serviceName != "identity-service" {
 		problems = append(problems, "RABBITMQ_URL is required")
 	}
 	// The token protects service-to-service endpoints, so an empty value is a
@@ -91,6 +96,9 @@ func Load(serviceName string, lookup Loader) (Config, error) {
 	if !strings.HasPrefix(cfg.StockServiceURL, "http://") && !strings.HasPrefix(cfg.StockServiceURL, "https://") {
 		problems = append(problems, "STOCK_SERVICE_URL must be an http or https URL")
 	}
+	if !strings.HasPrefix(cfg.IdentityServiceURL, "http://") && !strings.HasPrefix(cfg.IdentityServiceURL, "https://") {
+		problems = append(problems, "IDENTITY_SERVICE_URL must be an http or https URL")
+	}
 	if !validLogLevels[cfg.LogLevel] {
 		problems = append(problems, fmt.Sprintf("LOG_LEVEL %q is invalid (use debug, info, warn or error)", cfg.LogLevel))
 	}
@@ -99,6 +107,11 @@ func Load(serviceName string, lookup Loader) (Config, error) {
 		return Config{}, fmt.Errorf("config: %s", strings.Join(problems, "; "))
 	}
 	return cfg, nil
+}
+
+// JWKSURL is where the identity service publishes its verification keys.
+func (c Config) JWKSURL() string {
+	return strings.TrimSuffix(c.IdentityServiceURL, "/") + "/.well-known/jwks.json"
 }
 
 var validLogLevels = map[string]bool{"debug": true, "info": true, "warn": true, "error": true}

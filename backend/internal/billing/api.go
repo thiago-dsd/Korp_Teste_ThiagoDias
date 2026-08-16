@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 )
 
@@ -20,12 +21,15 @@ func NewAPI(service *Service) *API {
 	return &API{service: service}
 }
 
-// Routes registers the invoice endpoints on the given mux.
-func (a *API) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /invoices", a.createInvoice)
-	mux.HandleFunc("GET /invoices", a.listInvoices)
-	mux.HandleFunc("GET /invoices/{id}", a.getInvoice)
-	mux.HandleFunc("POST /invoices/{id}/print", a.printInvoice)
+// Routes registers the invoice endpoints on the given mux. They are only
+// served to a signed in user.
+func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
+	guard := authn.RequireUser(verifier)
+
+	mux.Handle("POST /invoices", guard(http.HandlerFunc(a.createInvoice)))
+	mux.Handle("GET /invoices", guard(http.HandlerFunc(a.listInvoices)))
+	mux.Handle("GET /invoices/{id}", guard(http.HandlerFunc(a.getInvoice)))
+	mux.Handle("POST /invoices/{id}/print", guard(http.HandlerFunc(a.printInvoice)))
 }
 
 type createInvoiceRequest struct {

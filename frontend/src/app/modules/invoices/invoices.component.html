@@ -1,0 +1,95 @@
+<div class="space-y-5">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-foreground text-xl font-semibold">Invoices</h1>
+      <p class="text-muted-foreground mt-1 text-sm">
+        Invoices are numbered in sequence. Printing one closes it and debits the stock balances.
+      </p>
+    </div>
+    <a
+      routerLink="/invoices/new"
+      class="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold">
+      <svg-icon src="assets/icons/heroicons/outline/folder.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+      New invoice
+    </a>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap gap-1" role="group" aria-label="Filter invoices by status">
+      @for (status of filters; track status) {
+        <button
+          type="button"
+          (click)="selectFilter(status)"
+          [attr.aria-pressed]="activeFilter() === status"
+          class="rounded-md px-3 py-1.5 text-xs font-semibold"
+          [class]="activeFilter() === status ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'">
+          {{ labelFor(status) }}
+        </button>
+      }
+    </div>
+    @if (hasPrinting()) {
+      <button type="button" (click)="refresh()" class="text-primary ml-auto text-xs font-semibold underline">
+        Refresh
+      </button>
+    }
+  </div>
+
+  @if (loadFailure(); as error) {
+    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
+      <p class="text-destructive font-semibold">{{ error.message }}</p>
+      <button type="button" (click)="refresh()" class="text-destructive mt-2 text-xs font-semibold underline">
+        Try again
+      </button>
+    </div>
+  }
+
+  <div class="border-muted overflow-x-auto rounded-md border">
+    <table class="w-full text-left text-sm">
+      <caption class="sr-only">
+        Issued invoices
+      </caption>
+      <thead class="bg-card text-muted-foreground text-xs uppercase">
+        <tr>
+          <th scope="col" class="px-4 py-3 font-semibold">Number</th>
+          <th scope="col" class="px-4 py-3 font-semibold">Status</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">Products</th>
+          <th scope="col" class="px-4 py-3 font-semibold">Created</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody class="divide-muted divide-y" aria-live="polite" aria-busy="{{ loading() }}">
+        @if (loading() && items().length === 0) {
+          <tr>
+            <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">Loading invoices…</td>
+          </tr>
+        } @else if (items().length === 0) {
+          <tr>
+            <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">No invoices with this filter.</td>
+          </tr>
+        } @else {
+          @for (invoice of items(); track invoice.id) {
+            <tr class="hover:bg-card/60">
+              <td class="text-foreground px-4 py-3 font-medium">#{{ invoice.number }}</td>
+              <td class="px-4 py-3">
+                <app-invoice-status [status]="invoice.status" />
+                @if (invoice.failure) {
+                  <p class="text-destructive mt-1 text-xs">{{ invoice.failure.message }}</p>
+                }
+              </td>
+              <td class="text-muted-foreground px-4 py-3 text-right">{{ invoice.items.length }}</td>
+              <td class="text-muted-foreground px-4 py-3">{{ invoice.createdAt | date: 'short' }}</td>
+              <td class="px-4 py-3 text-right">
+                <a
+                  [routerLink]="['/invoices', invoice.id]"
+                  class="text-primary text-xs font-semibold"
+                  [attr.aria-label]="'Open invoice ' + invoice.number">
+                  Open
+                </a>
+              </td>
+            </tr>
+          }
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

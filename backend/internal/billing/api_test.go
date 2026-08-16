@@ -15,7 +15,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/billing"
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
 )
+
+// signer issues the access tokens the endpoints require.
+var signer *authntest.Signer
 
 // memoryInvoices is an in-memory InvoiceRepository for handler tests.
 type memoryInvoices struct {
@@ -151,9 +155,10 @@ func sampleProduct(code, description string, balance int) stockclient.Product {
 func newTestAPI(t *testing.T, lookup *stubLookup) (*memoryInvoices, http.Handler) {
 	t.Helper()
 
+	signer = authntest.New(t)
 	invoices := newMemoryInvoices()
 	mux := http.NewServeMux()
-	billing.NewAPI(billing.NewService(invoices, lookup, invoices)).Routes(mux)
+	billing.NewAPI(billing.NewService(invoices, lookup, invoices)).Routes(mux, signer.Verifier)
 	return invoices, mux
 }
 
@@ -162,6 +167,7 @@ func doRequest(t *testing.T, handler http.Handler, method, target, body string) 
 
 	request := httptest.NewRequest(method, target, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
+	signer.Authenticate(t, request)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -590,4 +596,30 @@ func TestReconcilerLeavesFreshPrintingsAlone(t *testing.T) {
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func TestInvoiceEndpointsRequireASignedInUser(t *testing.T) {
+	_, handler := newTestAPI(t, newStubLookup())
+
+	tests := []struct {
+		method string
+		target string
+	}{
+		{http.MethodGet, "/invoices"},
+		{http.MethodPost, "/invoices"},
+		{http.MethodGet, "/invoices/" + uuid.New().String()},
+		{http.MethodPost, "/invoices/" + uuid.New().String() + "/print"},
+	}
+
+	for _, tc := range tests {
+		request := httptest.NewRequest(tc.method, tc.target, strings.NewReader(`{}`))
+		request.Header.Set("Content-Type", "application/json")
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s without a token = %d, want %d", tc.method, tc.target, recorder.Code, http.StatusUnauthorized)
+		}
+	}
 }

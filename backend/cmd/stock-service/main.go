@@ -13,6 +13,7 @@ import (
 
 	"github.com/thiagodias/korp-invoices/internal/config"
 	"github.com/thiagodias/korp-invoices/internal/contracts"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/health"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/idempotency"
@@ -73,13 +74,17 @@ func run() error {
 		health.Check{Name: "broker", Probe: rabbit.Ping},
 	)
 
+	// Access tokens are verified with the public key of the identity service.
+	verifier := authn.NewVerifier(cfg.JWKSURL())
+	logger.Info("verifying access tokens", "jwks_url", cfg.JWKSURL())
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", healthHandler.Live)
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
 
 	failures := &stock.FailureSwitch{}
 	api := stock.NewAPI(stock.NewService(stock.NewStore(pool)), failures)
-	api.Routes(mux)
+	api.Routes(mux, verifier)
 	api.InternalRoutes(mux, cfg.ServiceToken)
 
 	// Print requests are consumed from the broker: the balances are debited

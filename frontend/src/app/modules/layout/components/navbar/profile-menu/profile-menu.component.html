@@ -18,24 +18,72 @@
         <img class="rounded-md" src="assets/avatars/user.svg" alt="" />
       </div>
       <div class="text-foreground overflow-hidden px-2 text-sm font-semibold">
-        Operator
-        <p class="text-muted-foreground truncate text-ellipsis text-xs font-semibold">operator&#64;invoice.local</p>
+        {{ user()?.name ?? 'Not signed in' }}
+        <p class="text-muted-foreground truncate text-ellipsis text-xs font-semibold">{{ user()?.email }}</p>
       </div>
     </div>
 
     <div class="border-border border-b border-dashed"></div>
 
-    <ul class="my-2 mx-2 flex flex-col">
-      @for (item of profileMenu; track $index) {
-        <li
-          routerLink="{{ item.link }}"
-          :key="$index"
-          class="text-muted-foreground hover:bg-card hover:text-primary inline-flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs font-semibold">
-          <svg-icon src="{{ item.icon }}" [svgClass]="'h-5 w-5 text-muted-foreground/50'"> </svg-icon>
-          {{ item.title }}
-        </li>
-      }
+    <ul class="mx-2 my-2 flex flex-col">
+      <li>
+        <button
+          type="button"
+          (click)="signOut()"
+          class="text-muted-foreground hover:bg-card hover:text-primary inline-flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs font-semibold">
+          <svg-icon src="assets/icons/heroicons/outline/logout.svg" [svgClass]="'h-5 w-5 text-muted-foreground/50'">
+          </svg-icon>
+          Sign out
+        </button>
+      </li>
+      <li>
+        <button
+          type="button"
+          (click)="startAccountDeletion()"
+          class="text-destructive hover:bg-destructive/10 inline-flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-xs font-semibold">
+          <svg-icon
+            src="assets/icons/heroicons/outline/exclamation-triangle.svg"
+            [svgClass]="'h-5 w-5 text-destructive/60'">
+          </svg-icon>
+          Delete account
+        </button>
+      </li>
     </ul>
+
+    @if (confirmingDeletion()) {
+      <div class="border-destructive/40 bg-destructive/5 mx-2 mb-2 rounded-md border p-3">
+        <p class="text-destructive text-xs font-semibold">This cannot be undone</p>
+        <p class="text-muted-foreground mt-1 text-xs">
+          Your account and every session of it are removed. Confirm with your password.
+        </p>
+        <label for="delete-password" class="sr-only">Password</label>
+        <input
+          id="delete-password"
+          type="password"
+          [(ngModel)]="deletePassword"
+          autocomplete="current-password"
+          placeholder="Your password"
+          class="border-muted bg-background text-foreground mt-2 w-full rounded-md border px-2 py-1.5 text-xs" />
+        @if (deleteFailure(); as error) {
+          <p role="alert" class="text-destructive mt-1 text-xs">{{ error.message }}</p>
+        }
+        <div class="mt-2 flex gap-2">
+          <button
+            type="button"
+            (click)="cancelAccountDeletion()"
+            class="border-muted text-foreground flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold">
+            Cancel
+          </button>
+          <button
+            type="button"
+            (click)="confirmAccountDeletion()"
+            [disabled]="deleting() || !deletePassword"
+            class="bg-destructive text-primary-foreground flex-1 rounded-md px-2 py-1.5 text-xs font-semibold disabled:opacity-60">
+            {{ deleting() ? 'Deleting…' : 'Delete' }}
+          </button>
+        </div>
+      </div>
+    }
     <hr class="border-border border-dashed" />
     <div class="mx-4 my-2">
       <span class="text-foreground text-xs font-semibold">Color</span>

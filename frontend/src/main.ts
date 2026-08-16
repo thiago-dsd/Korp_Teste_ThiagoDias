@@ -1,7 +1,10 @@
 import { enableProdMode, importProvidersFrom } from '@angular/core';
 
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { BrowserModule, bootstrapApplication } from '@angular/platform-browser';
 import { provideAnimations } from '@angular/platform-browser/animations';
+import { apiErrorInterceptor } from './app/core/interceptor/api-error.interceptor';
+import { authInterceptor } from './app/core/interceptor/auth.interceptor';
 import { AppRoutingModule } from './app/app-routing.module';
 import { AppComponent } from './app/app.component';
 import { environment } from './environments/environment';
@@ -20,6 +23,7 @@ bootstrapApplication(AppComponent, {
     importProvidersFrom(BrowserModule, AppRoutingModule),
     provideAnimations(),
     provideZonelessChangeDetection(),
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor, apiErrorInterceptor])),
   ],
 }).catch((err) => console.error(err));
 

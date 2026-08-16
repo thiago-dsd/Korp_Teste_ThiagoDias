@@ -11,6 +11,16 @@ export class Menu {
           label: 'Home',
           route: '/home',
         },
+        {
+          icon: 'assets/icons/heroicons/outline/cube.svg',
+          label: 'Products',
+          route: '/products',
+        },
+        {
+          icon: 'assets/icons/heroicons/outline/folder.svg',
+          label: 'Invoices',
+          route: '/invoices',
+        },
       ],
     },
     {
@@ -24,7 +34,6 @@ export class Menu {
           children: [
             { label: 'Sign in', route: '/auth/sign-in' },
             { label: 'Sign up', route: '/auth/sign-up' },
-            { label: 'Forgot Password', route: '/auth/forgot-password' },
           ],
         },
         {

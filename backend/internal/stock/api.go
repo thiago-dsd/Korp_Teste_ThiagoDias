@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 )
 
@@ -30,12 +31,15 @@ func NewAPI(service *Service, failures *FailureSwitch) *API {
 	return &API{service: service, failures: failures}
 }
 
-// Routes registers the product endpoints on the given mux.
-func (a *API) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /products", a.createProduct)
-	mux.HandleFunc("GET /products", a.listProducts)
-	mux.HandleFunc("GET /products/{id}", a.getProduct)
-	mux.HandleFunc("PUT /products/{id}", a.updateProduct)
+// Routes registers the product endpoints on the given mux. They are only
+// served to a signed in user: the catalogue and its balances are not public.
+func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
+	guard := authn.RequireUser(verifier)
+
+	mux.Handle("POST /products", guard(http.HandlerFunc(a.createProduct)))
+	mux.Handle("GET /products", guard(http.HandlerFunc(a.listProducts)))
+	mux.Handle("GET /products/{id}", guard(http.HandlerFunc(a.getProduct)))
+	mux.Handle("PUT /products/{id}", guard(http.HandlerFunc(a.updateProduct)))
 }
 
 // InternalRoutes registers the endpoints consumed by other services. They are

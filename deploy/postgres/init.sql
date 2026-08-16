@@ -4,4 +4,6 @@ CREATE DATABASE stock;
 CREATE DATABASE billing;
 CREATE DATABASE stock_test;
 CREATE DATABASE billing_test;
+CREATE DATABASE identity;
+CREATE DATABASE identity_test;
 CREATE DATABASE messaging_test;

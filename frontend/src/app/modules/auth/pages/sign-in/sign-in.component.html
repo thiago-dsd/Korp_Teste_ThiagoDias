@@ -1,110 +1,64 @@
-<!-- login form -->
-<form class="my-10 space-y-6" [formGroup]="form" (ngSubmit)="onSubmit()">
+<form class="my-10 space-y-6" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
   <div class="text-center">
-    <h2 class="text-foreground mb-1 text-3xl font-semibold">Hello Again <span class="text-primary">!</span></h2>
-    <p class="text-muted-foreground text-sm">Enter your credential to access your account.</p>
+    <h2 class="text-foreground mb-1 text-3xl font-semibold">Welcome back</h2>
+    <p class="text-muted-foreground text-sm">Sign in to manage products and invoices.</p>
   </div>
 
-  <div routerLink="/home">
-    <app-button full impact="bold" tone="light" shape="rounded" size="medium">
-      <svg-icon src="assets/icons/google-logo.svg" [svgClass]="'h-6 w-6 mr-2'"> </svg-icon>
-      Log in with Google
-    </app-button>
-  </div>
-
-  <div
-    class="before:border-muted after:border-muted my-4 flex items-center before:mt-0.5 before:flex-1 before:border-t after:mt-0.5 after:flex-1 after:border-t">
-    <p class="text-muted-foreground mx-4 mb-0 text-center text-sm">or</p>
-  </div>
-
-  <div class="space-y-3 text-left">
-    <div class="form__group">
-      <div class="relative">
-        <input
-          type="text"
-          id="email"
-          [ngClass]="{ 'is__invalid-input': submitted && f['email'].errors }"
-          class="peer block"
-          placeholder=" "
-          formControlName="email" />
-        <label
-          for="email"
-          [ngClass]="{ 'peer-focus:text-destructive!': submitted && f['email'].errors }"
-          class="bg-background text-muted-foreground peer-focus:text-primary absolute top-2 z-10 origin-left -translate-y-4 scale-95 transform px-2 text-sm duration-300 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-95 peer-focus:px-2 ltr:left-1 rtl:right-1">
-          Email address
-        </label>
-      </div>
-      @if (submitted && f['email'].errors) {
-        <div class="is__invalid-error">
-          @if (f['email'].errors['required']) {
-            <div>Required field</div>
-          }
-          @if (f['email'].errors['email']) {
-            <div>Email must be an email address valid</div>
-          }
-        </div>
+  <div class="space-y-4 text-left">
+    <div>
+      <label for="email" class="text-foreground mb-1 block text-sm font-medium">Email address</label>
+      <input
+        id="email"
+        type="email"
+        formControlName="email"
+        autocomplete="email"
+        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
+        [attr.aria-invalid]="form.controls.email.touched && form.controls.email.invalid ? 'true' : null"
+        [attr.aria-describedby]="form.controls.email.touched && form.controls.email.invalid ? 'email-error' : null" />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+        <p id="email-error" class="text-destructive mt-1 text-xs">Enter a valid email address.</p>
       }
     </div>
 
-    <div class="form__group">
+    <div>
+      <label for="password" class="text-foreground mb-1 block text-sm font-medium">Password</label>
       <div class="relative">
         <input
-          [type]="passwordTextType ? 'text' : 'password'"
           id="password"
-          [ngClass]="{ 'is__invalid-input': submitted && f['password'].errors }"
-          class="peer block"
-          placeholder=" "
-          formControlName="password" />
-        <label
-          for="password"
-          [ngClass]="{ 'peer-focus:text-destructive!': submitted && f['password'].errors }"
-          class="bg-background text-muted-foreground peer-focus:text-primary absolute top-2 z-10 origin-left -translate-y-4 scale-95 transform px-2 text-sm duration-300 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-2 peer-focus:-translate-y-4 peer-focus:scale-95 peer-focus:px-2 ltr:left-1 rtl:right-1">
-          Password
-        </label>
-        <span
-          class="text-muted-foreground absolute top-2 cursor-pointer ltr:right-3 rtl:left-3"
-          (click)="togglePasswordTextType()">
-          <svg-icon
-            [src]="
-              !passwordTextType
-                ? 'assets/icons/heroicons/outline/eye-off.svg'
-                : 'assets/icons/heroicons/outline/eye.svg'
-            "
-            [svgClass]="'h-5 w-5'">
-          </svg-icon>
-        </span>
+          [type]="showPassword() ? 'text' : 'password'"
+          formControlName="password"
+          autocomplete="current-password"
+          class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 pr-20 text-sm"
+          [attr.aria-invalid]="form.controls.password.touched && form.controls.password.invalid ? 'true' : null" />
+        <button
+          type="button"
+          (click)="togglePasswordVisibility()"
+          class="text-muted-foreground absolute inset-y-0 right-2 text-xs font-semibold"
+          [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'">
+          {{ showPassword() ? 'Hide' : 'Show' }}
+        </button>
       </div>
-      @if (submitted && f['password'].errors) {
-        <div class="is__invalid-error">
-          @if (f['password'].errors['required']) {
-            <div>Required field</div>
-          }
-        </div>
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <p class="text-destructive mt-1 text-xs">Enter your password.</p>
       }
     </div>
   </div>
 
-  <div class="mb-2 flex items-center justify-between space-x-3">
-    <div class="flex items-center">
-      <input id="remember-me" name="remember-me" type="checkbox" />
-      <label for="remember-me" class="text-muted-foreground ml-2 block text-sm"> Remember me </label>
+  @if (failure(); as error) {
+    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-3 text-sm">
+      <p class="text-destructive">{{ error.message }}</p>
     </div>
+  }
 
-    <app-button routerLink="/auth/forgot-password" impact="none" tone="primary" shape="rounded" size="small">
-      Forgot your password?
-    </app-button>
-  </div>
+  <button
+    type="submit"
+    [disabled]="submitting()"
+    class="bg-primary text-primary-foreground w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60">
+    {{ submitting() ? 'Signing in…' : 'Sign in' }}
+  </button>
 
-  <!-- Submit Button -->
-  <div>
-    <app-button full impact="bold" tone="primary" shape="rounded" size="medium">Sign in</app-button>
-  </div>
-
-  <!-- Sign-up -->
-  <div class="text-muted-foreground flex items-center text-sm">
-    Not a Member yet?
-    <app-button routerLink="/auth/sign-up" impact="none" tone="primary" shape="rounded" size="small">
-      Sign up
-    </app-button>
-  </div>
+  <p class="text-muted-foreground text-center text-sm">
+    No account yet?
+    <a routerLink="/auth/sign-up" class="text-primary font-semibold">Create one</a>
+  </p>
 </form>

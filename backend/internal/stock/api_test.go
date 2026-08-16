@@ -11,9 +11,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/stock"
 )
+
+// signer issues the access tokens the endpoints require.
+var signer *authntest.Signer
 
 // memoryRepository is an in-memory ProductRepository for handler tests.
 type memoryRepository struct {
@@ -108,9 +112,10 @@ func (r *memoryRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]st
 func newTestAPI(t *testing.T) (*memoryRepository, http.Handler) {
 	t.Helper()
 
+	signer = authntest.New(t)
 	repository := newMemoryRepository()
 	mux := http.NewServeMux()
-	stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{}).Routes(mux)
+	stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{}).Routes(mux, signer.Verifier)
 	return repository, mux
 }
 
@@ -126,6 +131,7 @@ func doRequest(t *testing.T, handler http.Handler, method, target, body string) 
 
 	request := httptest.NewRequest(method, target, reader)
 	request.Header.Set("Content-Type", "application/json")
+	signer.Authenticate(t, request)
 
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
@@ -407,10 +413,11 @@ func TestFindProductsReportsMissingProduct(t *testing.T) {
 func newTestAPIWithInternalRoutes(t *testing.T, token string) (*memoryRepository, http.Handler) {
 	t.Helper()
 
+	signer = authntest.New(t)
 	repository := newMemoryRepository()
 	mux := http.NewServeMux()
 	api := stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{})
-	api.Routes(mux)
+	api.Routes(mux, signer.Verifier)
 	api.InternalRoutes(mux, token)
 	return repository, mux
 }
@@ -493,5 +500,64 @@ func TestLookupProductsValidatesRequest(t *testing.T) {
 	tooMany := lookupProducts(t, handler, "s3cret", `{"product_ids":[`+strings.Join(ids, ",")+`]}`)
 	if tooMany.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", tooMany.Code, http.StatusBadRequest)
+	}
+}
+
+func TestProductEndpointsRequireASignedInUser(t *testing.T) {
+	_, handler := newTestAPI(t)
+
+	tests := []struct {
+		method string
+		target string
+	}{
+		{http.MethodGet, "/products"},
+		{http.MethodPost, "/products"},
+		{http.MethodGet, "/products/" + uuid.New().String()},
+		{http.MethodPut, "/products/" + uuid.New().String()},
+	}
+
+	for _, tc := range tests {
+		request := httptest.NewRequest(tc.method, tc.target, strings.NewReader(`{}`))
+		request.Header.Set("Content-Type", "application/json")
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s without a token = %d, want %d", tc.method, tc.target, recorder.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestProductEndpointsRefuseATokenSignedByAnotherKey(t *testing.T) {
+	_, handler := newTestAPI(t)
+	stranger := authntest.New(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/products", nil)
+	request.Header.Set("Authorization", "Bearer "+stranger.Token(t))
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestProductEndpointsRefuseAMalformedAuthorizationHeader(t *testing.T) {
+	_, handler := newTestAPI(t)
+
+	for _, header := range []string{"", "Bearer", "Bearer ", "Basic abc", signer.Token(t)} {
+		request := httptest.NewRequest(http.MethodGet, "/products", nil)
+		if header != "" {
+			request.Header.Set("Authorization", header)
+		}
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusUnauthorized {
+			t.Errorf("header %q = %d, want %d", header, recorder.Code, http.StatusUnauthorized)
+		}
 	}
 }
