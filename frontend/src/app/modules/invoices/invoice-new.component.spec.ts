@@ -44,10 +44,25 @@ describe('InvoiceNewComponent', () => {
     http.match((request) => request.url.startsWith('assets/')).forEach((request) => request.flush('<svg></svg>'));
   });
 
-  function loadCatalogue(): void {
+  function loadCatalogue(assistantAvailable = false): void {
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: assistantAvailable });
     http.expectOne(productsUrl).flush({
       items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
     });
+  }
+
+  function draftPayload(items: { code: string; id: string; quantity: number }[], warnings: string[] = []) {
+    return {
+      items: items.map((item) => ({
+        product_id: item.id,
+        product_code: item.code,
+        product_description: 'Steel bolt',
+        quantity: item.quantity,
+        balance: 10,
+      })),
+      warnings,
+      model: 'gpt-test',
+    };
   }
 
   function addLine(productId: string, quantity: number): void {
@@ -161,5 +176,132 @@ describe('InvoiceNewComponent', () => {
     fixture.detectChanges();
 
     expect(text()).toContain('could not be reached');
+  });
+});
+
+describe('InvoiceNewComponent with the assistant', () => {
+  let fixture: ComponentFixture<InvoiceNewComponent>;
+  let component: InvoiceNewComponent;
+  let http: HttpTestingController;
+
+  function text(): string {
+    return (fixture.nativeElement as HTMLElement).textContent ?? '';
+  }
+
+  function draftPayload(items: { code: string; id: string; quantity: number }[], warnings: string[] = []) {
+    return {
+      items: items.map((item) => ({
+        product_id: item.id,
+        product_code: item.code,
+        product_description: 'Steel bolt',
+        quantity: item.quantity,
+        balance: 10,
+      })),
+      warnings,
+      model: 'gpt-test',
+    };
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [InvoiceNewComponent],
+      providers: [
+        provideHttpClient(withInterceptors([apiErrorInterceptor])),
+        provideHttpClientTesting(),
+        provideRouter([]),
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(InvoiceNewComponent);
+    component = fixture.componentInstance;
+    http = TestBed.inject(HttpTestingController);
+    fixture.detectChanges();
+
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
+    http.expectOne(productsUrl).flush({
+      items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    http.match((request) => request.url.startsWith('assets/')).forEach((request) => request.flush('<svg></svg>'));
+  });
+
+  it('should offer the assistant when the service has it configured', () => {
+    expect(component.assistantAvailable()).toBe(true);
+    expect(text()).toContain('Describe the invoice');
+  });
+
+  it('should fill the lines with what the assistant suggests', async () => {
+    component.draftControl.setValue('two steel bolts');
+    component.askAssistant();
+
+    const request = http.expectOne(`${invoicesUrl}/draft`);
+    expect(request.request.body).toEqual({ text: 'two steel bolts' });
+    request.flush(draftPayload([{ id: 'p-1', code: 'P-1', quantity: 2 }]));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.lines().length).toBe(1);
+    expect(component.lines()[0].quantity).toBe(2);
+    expect(component.draftControl.value).toBe('');
+  });
+
+  it('should show what the assistant could not match', async () => {
+    component.draftControl.setValue('two bolts and a blue widget');
+    component.askAssistant();
+
+    http
+      .expectOne(`${invoicesUrl}/draft`)
+      .flush(
+        draftPayload([{ id: 'p-1', code: 'P-1', quantity: 2 }], ['"a blue widget" was not recognised as a product.']),
+      );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).toContain('was not recognised as a product');
+  });
+
+  it('should add to the lines the operator already had', async () => {
+    component.lineForm.setValue({ productId: 'p-1', quantity: 1 });
+    component.addLine();
+
+    component.draftControl.setValue('two more bolts');
+    component.askAssistant();
+    http.expectOne(`${invoicesUrl}/draft`).flush(draftPayload([{ id: 'p-1', code: 'P-1', quantity: 2 }]));
+    await fixture.whenStable();
+
+    expect(component.lines().length).toBe(1);
+    expect(component.lines()[0].quantity).toBe(3);
+  });
+
+  it('should keep the screen usable when the assistant fails', async () => {
+    component.draftControl.setValue('two bolts');
+    component.askAssistant();
+
+    http
+      .expectOne(`${invoicesUrl}/draft`)
+      .flush(
+        { error: { code: 'ai_unavailable', message: 'The assistant is unavailable right now.' } },
+        { status: 503, statusText: 'Service Unavailable' },
+      );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.drafting()).toBe(false);
+    expect(text()).toContain('The assistant is unavailable right now.');
+    // Adding products by hand still works.
+    component.lineForm.setValue({ productId: 'p-1', quantity: 1 });
+    component.addLine();
+    expect(component.lines().length).toBe(1);
+  });
+
+  it('should not call the assistant with an empty sentence', () => {
+    component.draftControl.setValue('   ');
+    component.askAssistant();
+
+    http.expectNone(`${invoicesUrl}/draft`);
   });
 });

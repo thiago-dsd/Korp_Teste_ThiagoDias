@@ -47,6 +47,7 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
 func (a *API) InternalRoutes(mux *http.ServeMux, serviceToken string) {
 	guard := httpx.RequireServiceToken(serviceToken)
 	mux.Handle("POST /internal/products/lookup", guard(http.HandlerFunc(a.lookupProducts)))
+	mux.Handle("GET /internal/products", guard(http.HandlerFunc(a.listProducts)))
 	mux.Handle("POST /internal/failure-simulation", guard(http.HandlerFunc(a.setFailureSimulation)))
 	mux.Handle("GET /internal/failure-simulation", guard(http.HandlerFunc(a.getFailureSimulation)))
 }

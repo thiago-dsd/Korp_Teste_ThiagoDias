@@ -55,6 +55,21 @@ POST /invoices/{id}/print   ->  202 Accepted, status PRINTING
 Only invoices with status `OPEN` can be printed, and an invoice being printed is locked, so two
 operators clicking at the same time produce a single debit request.
 
+### Writing an invoice with the assistant
+
+The billing service can turn a sentence such as *"two steel bolts and a hammer"* into invoice
+lines, using a chat deployment on Microsoft Azure AI Foundry.
+
+The model only suggests. Every code it answers with is resolved against the real catalogue,
+quantities must be positive integers within the allowed range, repeated products are merged and
+anything that does not match is dropped with a warning shown to the operator. The invoice is
+created by the regular endpoint, after the person reviews the lines. A sentence trying to talk the
+model into ignoring its instructions therefore cannot reach the stock: the rules are enforced
+after the answer comes back, not by the prompt.
+
+Set `AZURE_AI_FOUNDRY_ENDPOINT`, `AZURE_AI_FOUNDRY_API_KEY` and `AZURE_AI_FOUNDRY_DEPLOYMENT` to
+enable it. Without them the screen does not offer the assistant and invoices are written by hand.
+
 ### Failure scenarios
 
 | Scenario | What happens |
@@ -66,6 +81,7 @@ operators clicking at the same time produce a single debit request.
 | Repeated request | An `Idempotency-Key` replays the first answer; a redelivered event never debits twice |
 | Access token expired | The application refreshes the session and replays the request without interrupting anyone |
 | Refresh token replayed | The session is revoked on the spot and both the attacker and the client have to sign in again |
+| Assistant unavailable or answering nonsense | The answer is discarded and the invoice is written by hand |
 
 The stock service can be made to fail on purpose, which is useful for a demonstration:
 

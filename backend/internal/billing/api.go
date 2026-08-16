@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thiagodias/korp-invoices/internal/platform/aiclient"
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
@@ -13,12 +14,15 @@ import (
 
 // API exposes the billing use cases over HTTP.
 type API struct {
-	service *Service
+	service   *Service
+	assistant *DraftAssistant
 }
 
-// NewAPI builds the HTTP layer of the billing service.
-func NewAPI(service *Service) *API {
-	return &API{service: service}
+// NewAPI builds the HTTP layer of the billing service. The assistant is
+// optional: without it the drafting endpoint reports that it is not available
+// and the screens keep working by hand.
+func NewAPI(service *Service, assistant *DraftAssistant) *API {
+	return &API{service: service, assistant: assistant}
 }
 
 // Routes registers the invoice endpoints on the given mux. They are only
@@ -30,6 +34,73 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
 	mux.Handle("GET /invoices", guard(http.HandlerFunc(a.listInvoices)))
 	mux.Handle("GET /invoices/{id}", guard(http.HandlerFunc(a.getInvoice)))
 	mux.Handle("POST /invoices/{id}/print", guard(http.HandlerFunc(a.printInvoice)))
+
+	// Drafting costs money on every call, so it is throttled on its own.
+	draftLimiter := httpx.NewRateLimiter(20, time.Minute)
+	mux.Handle("POST /invoices/draft", guard(draftLimiter.Middleware()(http.HandlerFunc(a.draftInvoice))))
+	mux.Handle("GET /invoices/draft", guard(http.HandlerFunc(a.assistantStatus)))
+}
+
+type draftRequest struct {
+	Text string `json:"text"`
+}
+
+type draftResponse struct {
+	Items    []draftItemResponse `json:"items"`
+	Warnings []string            `json:"warnings"`
+	Model    string              `json:"model"`
+}
+
+type draftItemResponse struct {
+	ProductID          uuid.UUID `json:"product_id"`
+	ProductCode        string    `json:"product_code"`
+	ProductDescription string    `json:"product_description"`
+	Quantity           int       `json:"quantity"`
+	Balance            int       `json:"balance"`
+}
+
+type assistantStatusResponse struct {
+	Available bool `json:"available"`
+}
+
+// draftInvoice suggests invoice lines for a sentence. It only suggests: the
+// invoice is created by the regular endpoint once the operator confirms.
+func (a *API) draftInvoice(w http.ResponseWriter, r *http.Request) {
+	if a.assistant == nil || !a.assistant.Available() {
+		httpx.WriteError(w, r, aiclient.ErrNotConfigured)
+		return
+	}
+
+	var request draftRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	draft, err := a.assistant.Draft(r.Context(), request.Text)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	items := make([]draftItemResponse, 0, len(draft.Lines))
+	for _, line := range draft.Lines {
+		items = append(items, draftItemResponse{
+			ProductID:          line.ProductID,
+			ProductCode:        line.ProductCode,
+			ProductDescription: line.ProductDescription,
+			Quantity:           line.Quantity,
+			Balance:            line.Balance,
+		})
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, draftResponse{Items: items, Warnings: draft.Warnings, Model: draft.Model})
+}
+
+// assistantStatus lets the screen know whether to offer the assistant at all.
+func (a *API) assistantStatus(w http.ResponseWriter, r *http.Request) {
+	httpx.WriteJSON(w, r, http.StatusOK, assistantStatusResponse{
+		Available: a.assistant != nil && a.assistant.Available(),
+	})
 }
 
 type createInvoiceRequest struct {

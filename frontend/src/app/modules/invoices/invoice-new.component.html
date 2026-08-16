@@ -18,6 +18,55 @@
     </div>
   }
 
+  @if (assistantAvailable()) {
+    <section
+      class="border-primary/30 bg-primary/5 rounded-md border border-dashed p-4"
+      aria-labelledby="assistant-title">
+      <h2 id="assistant-title" class="text-foreground flex items-center gap-2 text-sm font-semibold">
+        <svg-icon src="assets/icons/heroicons/outline/cube.svg" [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
+        Describe the invoice
+      </h2>
+      <p class="text-muted-foreground mt-1 text-xs">
+        Write what you are selling in your own words. The assistant matches it against the catalogue and fills the lines
+        below; you review everything before the invoice is created.
+      </p>
+
+      <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+        <label for="draft-text" class="sr-only">What are you selling?</label>
+        <input
+          id="draft-text"
+          type="text"
+          [formControl]="draftControl"
+          [attr.maxlength]="maxDraftLength"
+          (keydown.enter)="askAssistant()"
+          placeholder="e.g. two steel bolts and a hammer"
+          class="border-muted bg-background text-foreground flex-1 rounded-md border px-3 py-2 text-sm" />
+        <button
+          type="button"
+          (click)="askAssistant()"
+          [disabled]="drafting() || draftControl.value.trim().length === 0"
+          class="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60">
+          {{ drafting() ? 'Reading…' : 'Fill with assistant' }}
+        </button>
+      </div>
+
+      <div aria-live="polite">
+        @if (draftWarnings().length > 0) {
+          <ul class="mt-3 space-y-1">
+            @for (warning of draftWarnings(); track warning) {
+              <li class="text-xs text-amber-700">{{ warning }}</li>
+            }
+          </ul>
+        }
+        @if (draftFailure(); as error) {
+          <p role="alert" class="text-destructive mt-3 text-xs">
+            {{ error.message }}
+          </p>
+        }
+      </div>
+    </section>
+  }
+
   <form
     [formGroup]="lineForm"
     (ngSubmit)="addLine()"

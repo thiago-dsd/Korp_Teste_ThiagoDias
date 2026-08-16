@@ -33,3 +33,21 @@ export interface NewInvoiceItem {
   productId: string;
   quantity: number;
 }
+
+/** A line the assistant suggests for a sentence written by the operator. */
+export interface DraftLine {
+  productId: string;
+  productCode: string;
+  productDescription: string;
+  quantity: number;
+  /** Balance the stock has right now, so the screen can warn straight away. */
+  balance: number;
+}
+
+/** What the assistant made of a sentence. */
+export interface InvoiceDraft {
+  lines: DraftLine[];
+  /** What could not be turned into a line, in plain words. */
+  warnings: string[];
+  model: string;
+}

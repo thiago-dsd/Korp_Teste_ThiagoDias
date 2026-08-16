@@ -3,7 +3,7 @@ import { InjectionToken, Injectable, inject } from '@angular/core';
 import { Observable, map, switchMap, takeWhile, timer } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
-import { Invoice, InvoiceItem, InvoiceStatus, NewInvoiceItem } from '../models/invoice.model';
+import { DraftLine, Invoice, InvoiceDraft, InvoiceItem, InvoiceStatus, NewInvoiceItem } from '../models/invoice.model';
 import { idempotencyHeaders } from './product.service';
 
 /**
@@ -37,6 +37,18 @@ interface InvoiceItemPayload {
 
 interface InvoiceListPayload {
   items: InvoicePayload[];
+}
+
+interface DraftPayload {
+  items: {
+    product_id: string;
+    product_code: string;
+    product_description: string;
+    quantity: number;
+    balance: number;
+  }[];
+  warnings: string[];
+  model: string;
 }
 
 /**
@@ -78,6 +90,28 @@ export class InvoiceService {
     return this.http.post<InvoicePayload>(this.baseUrl, body, { headers: idempotencyHeaders() }).pipe(map(toInvoice));
   }
 
+  /** Reports whether the drafting assistant is configured on this environment. */
+  assistantAvailable(): Observable<boolean> {
+    return this.http.get<{ available: boolean }>(`${this.baseUrl}/draft`).pipe(map((payload) => payload.available));
+  }
+
+  /**
+   * Asks the assistant to turn a sentence into invoice lines.
+   *
+   * What comes back is a suggestion: the service already checked every product
+   * against the catalogue, and the invoice is only created when the operator
+   * confirms it on screen.
+   */
+  draft(text: string): Observable<InvoiceDraft> {
+    return this.http.post<DraftPayload>(`${this.baseUrl}/draft`, { text }).pipe(
+      map((payload) => ({
+        lines: payload.items.map(toDraftLine),
+        warnings: payload.warnings ?? [],
+        model: payload.model,
+      })),
+    );
+  }
+
   /** Asks the service to print an invoice. It answers as soon as the request is accepted. */
   requestPrint(id: string): Observable<Invoice> {
     return this.http
@@ -108,6 +142,16 @@ function toInvoice(payload: InvoicePayload): Invoice {
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
     printedAt: payload.printed_at,
+  };
+}
+
+function toDraftLine(payload: DraftPayload['items'][number]): DraftLine {
+  return {
+    productId: payload.product_id,
+    productCode: payload.product_code,
+    productDescription: payload.product_description,
+    quantity: payload.quantity,
+    balance: payload.balance,
   };
 }
 

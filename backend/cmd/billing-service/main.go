@@ -15,6 +15,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
 	"github.com/thiagodias/korp-invoices/internal/config"
 	"github.com/thiagodias/korp-invoices/internal/contracts"
+	"github.com/thiagodias/korp-invoices/internal/platform/aiclient"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/health"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
@@ -25,6 +26,23 @@ import (
 )
 
 const serviceName = "billing-service"
+
+// buildAssistant wires the drafting assistant when a model is configured.
+func buildAssistant(catalogue billing.CatalogueReader, logger *slog.Logger) *billing.DraftAssistant {
+	config := aiclient.Config{
+		Endpoint:   os.Getenv("AZURE_AI_FOUNDRY_ENDPOINT"),
+		APIKey:     os.Getenv("AZURE_AI_FOUNDRY_API_KEY"),
+		Deployment: os.Getenv("AZURE_AI_FOUNDRY_DEPLOYMENT"),
+		APIVersion: os.Getenv("AZURE_AI_FOUNDRY_API_VERSION"),
+	}
+	if !config.Configured() {
+		logger.Info("invoice drafting assistant is disabled; no model is configured")
+		return billing.NewDraftAssistant(nil, catalogue, logger)
+	}
+
+	logger.Info("invoice drafting assistant is enabled", "deployment", config.Deployment)
+	return billing.NewDraftAssistant(aiclient.NewFoundry(config), catalogue, logger)
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -87,7 +105,12 @@ func run() error {
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
 
 	invoices := billing.NewStore(pool)
-	api := billing.NewAPI(billing.NewService(invoices, stock, invoices))
+
+	// The assistant is optional: without a deployment the screens simply do
+	// not offer it, and everything else keeps working.
+	assistant := buildAssistant(stock, logger)
+
+	api := billing.NewAPI(billing.NewService(invoices, stock, invoices), assistant)
 	api.Routes(mux, verifier)
 
 	// Answers from the stock service close or reopen the invoice.

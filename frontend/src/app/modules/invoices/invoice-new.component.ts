@@ -1,6 +1,6 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { toast } from 'ngx-sonner';
@@ -9,6 +9,9 @@ import { ApiError } from 'src/app/core/models/api-error.model';
 import { Product } from 'src/app/core/models/product.model';
 import { InvoiceService } from 'src/app/core/services/invoice.service';
 import { ProductService } from 'src/app/core/services/product.service';
+
+/** Mirrors the limit the service enforces on the sentence. */
+export const MAX_DRAFT_TEXT_LENGTH = 500;
 
 /** A line the operator added to the invoice being written. */
 interface DraftLine {
@@ -48,6 +51,15 @@ export class InvoiceNewComponent implements OnInit {
     quantity: [1, [Validators.required, Validators.min(1), Validators.max(1_000_000)]],
   });
 
+  /** Free text handed to the assistant. */
+  readonly draftControl = new FormControl('', { nonNullable: true });
+
+  readonly assistantAvailable = signal(false);
+  readonly drafting = signal(false);
+  readonly draftWarnings = signal<string[]>([]);
+  readonly draftFailure = signal<ApiError | null>(null);
+  readonly maxDraftLength = MAX_DRAFT_TEXT_LENGTH;
+
   /** Products that are not on the invoice yet. */
   readonly available = computed(() => {
     const used = new Set(this.lines().map((line) => line.product.id));
@@ -60,6 +72,15 @@ export class InvoiceNewComponent implements OnInit {
   readonly linesOverBalance = computed(() => this.lines().filter((line) => line.quantity > line.product.balance));
 
   ngOnInit(): void {
+    // The assistant is optional, so the screen asks whether to offer it.
+    this.invoices
+      .assistantAvailable()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (available) => this.assistantAvailable.set(available),
+        error: () => this.assistantAvailable.set(false),
+      });
+
     this.products
       .list()
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -73,6 +94,66 @@ export class InvoiceNewComponent implements OnInit {
           this.catalogueFailure.set(error);
         },
       });
+  }
+
+  /**
+   * Asks the assistant to read the sentence and fill the lines.
+   *
+   * What comes back is a suggestion: the operator reviews the lines, changes
+   * what is wrong and presses the button that creates the invoice.
+   */
+  askAssistant(): void {
+    const text = this.draftControl.value.trim();
+    if (!text || this.drafting()) {
+      return;
+    }
+
+    this.drafting.set(true);
+    this.draftFailure.set(null);
+    this.draftWarnings.set([]);
+
+    this.invoices
+      .draft(text)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (draft) => {
+          this.drafting.set(false);
+          this.draftWarnings.set(draft.warnings);
+          this.applySuggestions(draft.lines);
+
+          if (draft.lines.length > 0) {
+            this.draftControl.reset('');
+            toast.success(`The assistant added ${draft.lines.length} product(s). Review before creating.`, {
+              position: 'bottom-right',
+            });
+          }
+        },
+        error: (error: ApiError) => {
+          this.drafting.set(false);
+          this.draftFailure.set(error);
+        },
+      });
+  }
+
+  /** Merges suggestions into the invoice without dropping what is there. */
+  private applySuggestions(suggestions: { productId: string; quantity: number }[]): void {
+    for (const suggestion of suggestions) {
+      const product = this.catalogue().find((candidate) => candidate.id === suggestion.productId);
+      if (!product) {
+        continue;
+      }
+
+      const existing = this.lines().findIndex((line) => line.product.id === product.id);
+      if (existing >= 0) {
+        this.lines.update((lines) =>
+          lines.map((line, index) =>
+            index === existing ? { ...line, quantity: line.quantity + suggestion.quantity } : line,
+          ),
+        );
+        continue;
+      }
+      this.lines.update((lines) => [...lines, { product, quantity: suggestion.quantity }]);
+    }
   }
 
   addLine(): void {

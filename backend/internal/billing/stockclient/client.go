@@ -119,6 +119,64 @@ func (c *Client) Lookup(ctx context.Context, ids []uuid.UUID) ([]Product, error)
 	return products, nil
 }
 
+// ListAll reads the whole catalogue, which the assistant needs to match a
+// sentence against real products.
+func (c *Client) ListAll(ctx context.Context) ([]Product, error) {
+	var products []Product
+
+	err := c.breaker.Do(ctx, func(ctx context.Context) error {
+		return resilience.Retry(ctx, c.retry, func(ctx context.Context) error {
+			result, err := c.getCatalogue(ctx)
+			if err != nil {
+				return err
+			}
+			products = result
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, translateFailure(err)
+	}
+	return products, nil
+}
+
+func (c *Client) getCatalogue(ctx context.Context) ([]Product, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/products", nil)
+	if err != nil {
+		return nil, resilience.Permanent(fmt.Errorf("build catalogue request: %w", err))
+	}
+	request.Header.Set(httpx.ServiceTokenHeader, c.token)
+	if requestID := httpx.RequestIDFrom(ctx); requestID != "" {
+		request.Header.Set(httpx.RequestIDHeader, requestID)
+	}
+
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("call stock service: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
+	if err != nil {
+		return nil, fmt.Errorf("read stock response: %w", err)
+	}
+
+	switch {
+	case response.StatusCode == http.StatusOK:
+		var parsed productListResponse
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			return nil, resilience.Permanent(fmt.Errorf("decode stock response: %w", err))
+		}
+		return parsed.Items, nil
+
+	case response.StatusCode >= 500 || response.StatusCode == http.StatusTooManyRequests:
+		return nil, fmt.Errorf("stock service returned status %d", response.StatusCode)
+
+	default:
+		return nil, resilience.Permanent(rejection(response.StatusCode, body))
+	}
+}
+
 func (c *Client) postLookup(ctx context.Context, payload []byte) ([]Product, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.baseURL+"/internal/products/lookup", bytes.NewReader(payload))

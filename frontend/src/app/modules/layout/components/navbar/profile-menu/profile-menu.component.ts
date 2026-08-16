@@ -3,7 +3,7 @@ import { NgClass } from '@angular/common';
 import { Component, DestroyRef, ChangeDetectionStrategy, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { toast } from 'ngx-sonner';
 import { ApiError } from '../../../../../core/models/api-error.model';
@@ -15,7 +15,7 @@ import { ClickOutsideDirective } from '../../../../../shared/directives/click-ou
   selector: 'app-profile-menu',
   templateUrl: './profile-menu.component.html',
   styleUrls: ['./profile-menu.component.css'],
-  imports: [ClickOutsideDirective, NgClass, RouterLink, AngularSvgIconModule, FormsModule],
+  imports: [ClickOutsideDirective, NgClass, AngularSvgIconModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.Eager,
   animations: [
     trigger('openClose', [
