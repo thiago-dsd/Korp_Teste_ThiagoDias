@@ -104,6 +104,34 @@ Filters combine freely and are applied by the database, never in memory:
 An unusable filter is refused with `400 invalid_filter` naming every offending field at once, and
 the listing keeps its filters while paging.
 
+### Rate limiting
+
+Operations are throttled by what they cost and by what abusing them achieves, not by one number
+for the whole service:
+
+| Category | Default | Counted per | Why |
+| --- | --- | --- | --- |
+| Read | 300/min | signed in person | Cheap, and a screen open on a listing makes many calls |
+| Write | 60/min | signed in person | Touches the database and the broker |
+| Assistant | 20/min | signed in person | Paid for on every call |
+| Sign in | 30/min | address | Generous on purpose; see below |
+| Public floor | 600/min | address | Bounds unauthenticated traffic |
+
+Authenticated traffic is counted per person rather than per address, so an office behind one
+address does not share a single allowance. Health probes, the endpoints the services call on each
+other and the published key set are never throttled: monitoring polls constantly, and throttling
+the internal calls would mean the system limiting its own printing flow.
+
+Guessing passwords is stopped by an account lockout rather than by the address limit: ten failed
+attempts close that account for fifteen minutes, counted in the database so every instance sees
+the same number, and applied to addresses with no account as well so the answer never reveals who
+is registered. A colleague on the same address keeps working the whole time.
+
+Every refusal is the usual error envelope with `429`, a `Retry-After` and the `RateLimit-*`
+headers, and says nothing about how the limit works. Limits are configured per environment (see
+`.env.example`); the allowance is per instance, so a deployment with several replicas divides
+them.
+
 ### Failure scenarios
 
 | Scenario | What happens |

@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thiagodias/korp-invoices/internal/identity"
+	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres/pgtest"
 )
 
@@ -304,4 +306,157 @@ func TestSessionsSurviveTheAccessTokenExpiry(t *testing.T) {
 		t.Errorf("Refresh() returned error: %v", err)
 	}
 	_ = time.Now
+}
+
+func TestAnAccountUnderAttackIsLockedForEveryone(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+	register(t, ctx, service, "ada@example.com")
+
+	policy := identity.LockoutPolicy{MaxFailures: 3, Lockout: time.Minute}
+	service.WithLockoutPolicy(policy)
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		_, _, err := service.Login(ctx, "ada@example.com", "wrong password entirely", "attacker")
+		if !errors.Is(err, identity.ErrInvalidCredentials) {
+			t.Fatalf("attempt %d returned %v, want the ordinary refusal", attempt, err)
+		}
+	}
+
+	// The account is now closed, and the right password does not open it.
+	_, _, err := service.Login(ctx, "ada@example.com", password, "the real owner")
+	if !errors.Is(err, identity.ErrTooManyAttempts) {
+		t.Fatalf("Login() returned %v, want ErrTooManyAttempts", err)
+	}
+	if wait := apperr.From(err).Details["retry_after_seconds"]; wait == "" {
+		t.Error("the answer does not say how long to wait")
+	}
+}
+
+// A locked answer must not depend on the account existing, or it would tell an
+// attacker which addresses are registered.
+func TestLockingLooksTheSameForUnknownAddresses(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+	service.WithLockoutPolicy(identity.LockoutPolicy{MaxFailures: 2, Lockout: time.Minute})
+
+	for range 2 {
+		if _, _, err := service.Login(ctx, "nobody@example.com", "guessing", "attacker"); !errors.Is(err, identity.ErrInvalidCredentials) {
+			t.Fatalf("Login() returned %v, want the ordinary refusal", err)
+		}
+	}
+
+	_, _, err := service.Login(ctx, "nobody@example.com", "guessing", "attacker")
+	if !errors.Is(err, identity.ErrTooManyAttempts) {
+		t.Errorf("Login() returned %v, want an address with no account to lock as well", err)
+	}
+}
+
+func TestOneAccountBeingAttackedDoesNotAffectAnother(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+	register(t, ctx, service, "ada@example.com")
+	register(t, ctx, service, "grace@example.com")
+	service.WithLockoutPolicy(identity.LockoutPolicy{MaxFailures: 2, Lockout: time.Minute})
+
+	for range 2 {
+		service.Login(ctx, "ada@example.com", "wrong password entirely", "attacker")
+	}
+
+	if _, _, err := service.Login(ctx, "grace@example.com", password, "someone working"); err != nil {
+		t.Errorf("Login() returned %v, want the other account unaffected", err)
+	}
+}
+
+func TestSigningInSuccessfullyForgetsEarlierTypos(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+	register(t, ctx, service, "ada@example.com")
+	service.WithLockoutPolicy(identity.LockoutPolicy{MaxFailures: 3, Lockout: time.Minute})
+
+	for range 2 {
+		service.Login(ctx, "ada@example.com", "typo", "the owner")
+	}
+	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); err != nil {
+		t.Fatalf("Login() returned %v, want the right password to work", err)
+	}
+
+	// The count started over, so two more typos still do not lock the account.
+	for range 2 {
+		service.Login(ctx, "ada@example.com", "typo", "the owner")
+	}
+	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); err != nil {
+		t.Errorf("Login() returned %v, want the failures to have been forgotten", err)
+	}
+}
+
+func TestTheLockExpires(t *testing.T) {
+	ctx, service, _, pool := newTestService(t)
+	register(t, ctx, service, "ada@example.com")
+	service.WithLockoutPolicy(identity.LockoutPolicy{MaxFailures: 1, Lockout: time.Hour})
+
+	service.Login(ctx, "ada@example.com", "wrong password entirely", "attacker")
+	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); !errors.Is(err, identity.ErrTooManyAttempts) {
+		t.Fatalf("Login() returned %v, want the account locked", err)
+	}
+
+	// Once the lock has run out, the owner is let back in.
+	if _, err := pool.Exec(ctx, `UPDATE login_attempts SET blocked_until = now() - interval '1 minute'`); err != nil {
+		t.Fatalf("expire the lock: %v", err)
+	}
+	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); err != nil {
+		t.Errorf("Login() returned %v, want the owner served after the lock expired", err)
+	}
+}
+
+// Every instance of the service counts against the same row, which is the
+// point of keeping the count in the database.
+func TestTheCountIsSharedBetweenInstances(t *testing.T) {
+	ctx, first, store, _ := newTestService(t)
+	register(t, ctx, first, "ada@example.com")
+
+	// A second instance, with its own service but the same database.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	second := identity.NewService(store, identity.NewTokenIssuer(key))
+
+	policy := identity.LockoutPolicy{MaxFailures: 4, Lockout: time.Minute}
+	first.WithLockoutPolicy(policy)
+	second.WithLockoutPolicy(policy)
+
+	// The attempts are split between the two instances.
+	for range 2 {
+		first.Login(ctx, "ada@example.com", "guessing", "attacker")
+		second.Login(ctx, "ada@example.com", "guessing", "attacker")
+	}
+
+	if _, _, err := second.Login(ctx, "ada@example.com", password, "the owner"); !errors.Is(err, identity.ErrTooManyAttempts) {
+		t.Errorf("Login() returned %v, want the attempts counted across instances", err)
+	}
+}
+
+// Concurrent guesses must not slip past the limit by racing each other.
+func TestConcurrentGuessesStillLockTheAccount(t *testing.T) {
+	ctx, service, _, pool := newTestService(t)
+	register(t, ctx, service, "ada@example.com")
+	service.WithLockoutPolicy(identity.LockoutPolicy{MaxFailures: 5, Lockout: time.Minute})
+
+	var wg sync.WaitGroup
+	wg.Add(20)
+	for range 20 {
+		go func() {
+			defer wg.Done()
+			service.Login(ctx, "ada@example.com", "guessing", "attacker")
+		}()
+	}
+	wg.Wait()
+
+	var failures int
+	if err := pool.QueryRow(ctx, `SELECT failures FROM login_attempts WHERE email = 'ada@example.com'`).Scan(&failures); err != nil {
+		t.Fatalf("read failures: %v", err)
+	}
+	if failures < 5 {
+		t.Errorf("failures = %d, want every attempt counted", failures)
+	}
+	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); !errors.Is(err, identity.ErrTooManyAttempts) {
+		t.Errorf("Login() returned %v, want the account locked", err)
+	}
 }

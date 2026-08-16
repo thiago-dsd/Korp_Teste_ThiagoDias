@@ -80,6 +80,8 @@ func StatusFor(kind apperr.Kind) int {
 		return http.StatusConflict
 	case apperr.KindUnauthorized:
 		return http.StatusUnauthorized
+	case apperr.KindTooManyRequests:
+		return http.StatusTooManyRequests
 	case apperr.KindUnavailable:
 		return http.StatusServiceUnavailable
 	default:

@@ -16,11 +16,19 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 	"github.com/thiagodias/korp-invoices/internal/stock"
 )
 
 // signer issues the access tokens the endpoints require.
 var signer *authntest.Signer
+
+// testLimits leave plenty of room, so a handler test never fails because of
+// throttling. The limits themselves have their own tests.
+func testLimits() stock.Limits {
+	generous := ratelimit.Policy{Name: "test", Requests: 10_000, Window: time.Minute, Burst: 10_000}
+	return stock.Limits{Limiter: ratelimit.NewTokenBucket(), Read: generous, Write: generous}
+}
 
 // memoryRepository is an in-memory ProductRepository for handler tests.
 type memoryRepository struct {
@@ -149,7 +157,7 @@ func newTestAPI(t *testing.T) (*memoryRepository, http.Handler) {
 	signer = authntest.New(t)
 	repository := newMemoryRepository()
 	mux := http.NewServeMux()
-	stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{}).Routes(mux, signer.Verifier)
+	stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{}).Routes(mux, signer.Verifier, testLimits())
 	return repository, mux
 }
 
@@ -451,7 +459,7 @@ func newTestAPIWithInternalRoutes(t *testing.T, token string) (*memoryRepository
 	repository := newMemoryRepository()
 	mux := http.NewServeMux()
 	api := stock.NewAPI(stock.NewService(repository), &stock.FailureSwitch{})
-	api.Routes(mux, signer.Verifier)
+	api.Routes(mux, signer.Verifier, testLimits())
 	api.InternalRoutes(mux, token)
 	return repository, mux
 }

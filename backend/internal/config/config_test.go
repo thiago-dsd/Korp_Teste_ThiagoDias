@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 func mapLoader(values map[string]string) Loader {
@@ -182,5 +184,88 @@ func TestLoadStockServiceURL(t *testing.T) {
 	env["STOCK_SERVICE_URL"] = "stock.internal"
 	if _, err := Load("billing-service", mapLoader(env)); err == nil {
 		t.Error("Load() accepted a URL without scheme, want an error")
+	}
+}
+
+func TestLoadRateLimitDefaults(t *testing.T) {
+	cfg, err := Load("stock-service", mapLoader(validEnv()))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+
+	// Reading is far more generous than writing, and signing in is the
+	// tightest of all.
+	if cfg.RateLimits.Read.Requests <= cfg.RateLimits.Write.Requests {
+		t.Errorf("read = %d and write = %d, want reading to be the more generous one",
+			cfg.RateLimits.Read.Requests, cfg.RateLimits.Write.Requests)
+	}
+	// Signing in is not the tightest per address on purpose: a shared address
+	// must not lock colleagues out. The precise defence is the account lockout.
+	if cfg.LoginMaxFailures <= 0 || cfg.LoginLockout <= 0 {
+		t.Errorf("lockout = %d failures for %v, want an account lockout configured",
+			cfg.LoginMaxFailures, cfg.LoginLockout)
+	}
+	if cfg.RateLimits.Auth.Requests >= cfg.RateLimits.Read.Requests {
+		t.Errorf("auth = %d and read = %d, want signing in tighter than reading",
+			cfg.RateLimits.Auth.Requests, cfg.RateLimits.Read.Requests)
+	}
+	if cfg.RateLimits.AI.Requests >= cfg.RateLimits.Read.Requests {
+		t.Errorf("ai = %d, want the paid endpoint tighter than reading", cfg.RateLimits.AI.Requests)
+	}
+	if cfg.RateLimits.Read.Burst >= cfg.RateLimits.Read.Requests {
+		t.Errorf("burst = %d, want it below the rate so a burst cannot sustain itself", cfg.RateLimits.Read.Burst)
+	}
+}
+
+func TestLoadRateLimitOverrides(t *testing.T) {
+	env := validEnv()
+	env["RATE_LIMIT_READ"] = "500/1m,burst=100"
+	env["RATE_LIMIT_WRITE"] = "30/30s"
+	env["RATE_LIMIT_AI"] = "off"
+
+	cfg, err := Load("billing-service", mapLoader(env))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+
+	if cfg.RateLimits.Read.Requests != 500 || cfg.RateLimits.Read.Burst != 100 {
+		t.Errorf("read = %+v, want 500 per minute with a burst of 100", cfg.RateLimits.Read)
+	}
+	if cfg.RateLimits.Write.Requests != 30 || cfg.RateLimits.Write.Window != 30*time.Second {
+		t.Errorf("write = %+v, want 30 per 30s", cfg.RateLimits.Write)
+	}
+	if !cfg.RateLimits.AI.Disabled() {
+		t.Errorf("ai = %+v, want it turned off", cfg.RateLimits.AI)
+	}
+}
+
+func TestRateLimitsCanBeTurnedOffEntirely(t *testing.T) {
+	env := validEnv()
+	env["RATE_LIMIT_ENABLED"] = "false"
+
+	cfg, err := Load("stock-service", mapLoader(env))
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+
+	for name, policy := range map[string]ratelimit.Policy{
+		"read":   cfg.RateLimits.Read,
+		"write":  cfg.RateLimits.Write,
+		"auth":   cfg.RateLimits.Auth,
+		"ai":     cfg.RateLimits.AI,
+		"public": cfg.RateLimits.Public,
+	} {
+		if !policy.Disabled() {
+			t.Errorf("%s = %+v, want it disabled", name, policy)
+		}
+	}
+}
+
+func TestLoadRejectsAMalformedRateLimit(t *testing.T) {
+	env := validEnv()
+	env["RATE_LIMIT_READ"] = "as fast as you like"
+
+	if _, err := Load("stock-service", mapLoader(env)); err == nil {
+		t.Fatal("Load() accepted a malformed rate limit, want an error")
 	}
 }

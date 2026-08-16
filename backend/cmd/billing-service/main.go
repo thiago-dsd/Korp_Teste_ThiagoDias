@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/thiagodias/korp-invoices/internal/billing"
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
@@ -23,6 +22,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/logging"
 	"github.com/thiagodias/korp-invoices/internal/platform/messaging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 const serviceName = "billing-service"
@@ -100,6 +100,16 @@ func run() error {
 	verifier := authn.NewVerifier(cfg.JWKSURL())
 	logger.Info("verifying access tokens", "jwks_url", cfg.JWKSURL())
 
+	// Throttling: a public floor per address for anything unauthenticated, and
+	// per user allowances on the routes themselves. Health probes and the
+	// endpoints other services call are exempt, so monitoring and the print
+	// flow are never throttled by the system's own traffic.
+	limiter := ratelimit.NewTokenBucket()
+	publicLimit := ratelimit.Exempt(
+		ratelimit.Middleware(limiter, cfg.RateLimits.Public, ratelimit.ByClientIP),
+		"/health/", "/internal/", "/.well-known/",
+	)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", healthHandler.Live)
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
@@ -111,7 +121,12 @@ func run() error {
 	assistant := buildAssistant(stock, logger)
 
 	api := billing.NewAPI(billing.NewService(invoices, stock, invoices), assistant)
-	api.Routes(mux, verifier)
+	api.Routes(mux, verifier, billing.Limits{
+		Limiter: limiter,
+		Read:    cfg.RateLimits.Read,
+		Write:   cfg.RateLimits.Write,
+		AI:      cfg.RateLimits.AI,
+	})
 
 	// Answers from the stock service close or reopen the invoice.
 	resultConsumer := messaging.NewConsumer("billing.stock_results", pool, logger,
@@ -129,9 +144,8 @@ func run() error {
 	// Invoices whose answer never arrived are reopened, so none stays stuck.
 	go billing.NewReconciler(invoices, logger).Run(ctx)
 
-	limiter := httpx.NewRateLimiter(120, time.Minute)
-	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout, limiter)
-	middlewares = append(middlewares, idempotency.Middleware(idempotency.NewPostgresStore(pool), logger))
+	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout)
+	middlewares = append(middlewares, publicLimit, idempotency.Middleware(idempotency.NewPostgresStore(pool), logger))
 
 	handler := httpx.Chain(mux, middlewares...)
 

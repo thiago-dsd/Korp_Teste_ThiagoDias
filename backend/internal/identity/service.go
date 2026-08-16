@@ -11,6 +11,9 @@ import (
 
 // UserRepository is the persistence the service depends on.
 type UserRepository interface {
+	LoginBlockedUntil(ctx context.Context, email string) (time.Time, error)
+	RegisterFailedLogin(ctx context.Context, email string, policy LockoutPolicy) error
+	ClearLoginFailures(ctx context.Context, email string) error
 	CreateUser(ctx context.Context, registration Registration, passwordHash string) (User, error)
 	FindUserByEmail(ctx context.Context, email string) (User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (User, error)
@@ -23,14 +26,23 @@ type UserRepository interface {
 
 // Service holds the identity use cases.
 type Service struct {
-	users  UserRepository
-	issuer *TokenIssuer
-	now    func() time.Time
+	users   UserRepository
+	issuer  *TokenIssuer
+	lockout LockoutPolicy
+	now     func() time.Time
 }
 
 // NewService builds an identity service.
 func NewService(users UserRepository, issuer *TokenIssuer) *Service {
-	return &Service{users: users, issuer: issuer, now: time.Now}
+	return &Service{users: users, issuer: issuer, lockout: DefaultLockoutPolicy(), now: time.Now}
+}
+
+// WithLockoutPolicy replaces how tolerant sign in is of repeated failures.
+func (s *Service) WithLockoutPolicy(policy LockoutPolicy) *Service {
+	if policy.MaxFailures > 0 && policy.Lockout > 0 {
+		s.lockout = policy
+	}
+	return s
 }
 
 // Register creates an account and signs the person in.
@@ -63,10 +75,25 @@ func (s *Service) Register(ctx context.Context, email, name, password, userAgent
 // password is verified even when the account does not exist, so the time the
 // endpoint takes does not reveal which addresses are registered.
 func (s *Service) Login(ctx context.Context, email, password, userAgent string) (User, TokenPair, error) {
+	// An account under attack is closed to everyone for a while, including the
+	// attacker. The check happens before the password is even looked at, and
+	// applies to addresses without an account too, so a locked answer never
+	// reveals which addresses are registered.
+	blockedUntil, err := s.users.LoginBlockedUntil(ctx, email)
+	if err != nil {
+		return User{}, TokenPair{}, err
+	}
+	if !blockedUntil.IsZero() {
+		return User{}, TokenPair{}, lockedError(blockedUntil)
+	}
+
 	user, err := s.users.FindUserByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			_, _ = VerifyPassword(password, decoyHash)
+			if err := s.users.RegisterFailedLogin(ctx, email, s.lockout); err != nil {
+				return User{}, TokenPair{}, err
+			}
 			return User{}, TokenPair{}, ErrInvalidCredentials
 		}
 		return User{}, TokenPair{}, err
@@ -77,7 +104,16 @@ func (s *Service) Login(ctx context.Context, email, password, userAgent string) 
 		return User{}, TokenPair{}, fmt.Errorf("verify password: %w", err)
 	}
 	if !matches {
+		if err := s.users.RegisterFailedLogin(ctx, email, s.lockout); err != nil {
+			return User{}, TokenPair{}, err
+		}
 		return User{}, TokenPair{}, ErrInvalidCredentials
+	}
+
+	// A successful sign in clears the count, so an ordinary typo never adds up
+	// to a lockout over the course of a day.
+	if err := s.users.ClearLoginFailures(ctx, user.Email); err != nil {
+		return User{}, TokenPair{}, err
 	}
 
 	tokens, err := s.startSession(ctx, user, userAgent)

@@ -20,10 +20,18 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
 	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 // signer issues the access tokens the endpoints require.
 var signer *authntest.Signer
+
+// testLimits leave plenty of room, so a handler test never fails because of
+// throttling. The limits themselves have their own tests.
+func testLimits() billing.Limits {
+	generous := ratelimit.Policy{Name: "test", Requests: 10_000, Window: time.Minute, Burst: 10_000}
+	return billing.Limits{Limiter: ratelimit.NewTokenBucket(), Read: generous, Write: generous, AI: generous}
+}
 
 // memoryInvoices is an in-memory InvoiceRepository for handler tests.
 type memoryInvoices struct {
@@ -195,7 +203,7 @@ func newTestAPI(t *testing.T, lookup *stubLookup) (*memoryInvoices, http.Handler
 	signer = authntest.New(t)
 	invoices := newMemoryInvoices()
 	mux := http.NewServeMux()
-	billing.NewAPI(billing.NewService(invoices, lookup, invoices), nil).Routes(mux, signer.Verifier)
+	billing.NewAPI(billing.NewService(invoices, lookup, invoices), nil).Routes(mux, signer.Verifier, testLimits())
 	return invoices, mux
 }
 

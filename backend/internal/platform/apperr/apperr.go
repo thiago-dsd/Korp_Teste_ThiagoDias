@@ -21,6 +21,8 @@ const (
 	KindConflict Kind = "conflict"
 	// KindUnauthorized means the caller is not allowed to perform the action.
 	KindUnauthorized Kind = "unauthorized"
+	// KindTooManyRequests means the caller is going faster than allowed.
+	KindTooManyRequests Kind = "too_many_requests"
 	// KindUnavailable means a dependency failed and the call may be retried.
 	KindUnavailable Kind = "unavailable"
 	// KindInternal means an unexpected failure the caller cannot act on.

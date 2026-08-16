@@ -8,6 +8,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 // maxLookupIDs bounds a single internal lookup, matching the maximum number of
@@ -28,17 +29,33 @@ func NewAPI(service *Service, failures *FailureSwitch) *API {
 
 // Routes registers the product endpoints on the given mux. They are only
 // served to a signed in user: the catalogue and its balances are not public.
-func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
+//
+// Throttling sits inside the guard so it counts against the person signed in
+// rather than against their address: a whole office behind one address must
+// not share a single allowance.
+func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits) {
 	guard := authn.RequireUser(verifier)
+	read := ratelimit.Middleware(limits.Limiter, limits.Read, ratelimit.ByUser)
+	write := ratelimit.Middleware(limits.Limiter, limits.Write, ratelimit.ByUser)
 
-	mux.Handle("POST /products", guard(http.HandlerFunc(a.createProduct)))
-	mux.Handle("GET /products", guard(http.HandlerFunc(a.listProducts)))
-	mux.Handle("GET /products/{id}", guard(http.HandlerFunc(a.getProduct)))
-	mux.Handle("PUT /products/{id}", guard(http.HandlerFunc(a.updateProduct)))
+	mux.Handle("POST /products", guard(write(http.HandlerFunc(a.createProduct))))
+	mux.Handle("GET /products", guard(read(http.HandlerFunc(a.listProducts))))
+	mux.Handle("GET /products/{id}", guard(read(http.HandlerFunc(a.getProduct))))
+	mux.Handle("PUT /products/{id}", guard(write(http.HandlerFunc(a.updateProduct))))
 }
 
-// InternalRoutes registers the endpoints consumed by other services. They are
-// guarded by the shared service token and are not meant for browsers.
+// Limits are the policies the endpoints are served under.
+type Limits struct {
+	Limiter ratelimit.Limiter
+	Read    ratelimit.Policy
+	Write   ratelimit.Policy
+}
+
+// InternalRoutes registers the endpoints consumed by other services.
+//
+// They are not throttled: they carry the shared service token, they all arrive
+// from the same address, and one of them is on the path that prints an invoice.
+// Throttling them would mean the system limiting itself.
 func (a *API) InternalRoutes(mux *http.ServeMux, serviceToken string) {
 	guard := httpx.RequireServiceToken(serviceToken)
 	mux.Handle("POST /internal/products/lookup", guard(http.HandlerFunc(a.lookupProducts)))

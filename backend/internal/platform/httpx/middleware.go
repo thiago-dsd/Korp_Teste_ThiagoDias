@@ -36,18 +36,19 @@ func Chain(handler http.Handler, middlewares ...Middleware) http.Handler {
 }
 
 // BaseMiddlewares returns the middleware stack every service applies, in the
-// order they must run: correlate, log, protect, throttle, bound.
-func BaseMiddlewares(logger *slog.Logger, allowedOrigins []string, requestTimeout time.Duration, limiter *RateLimiter) []Middleware {
-	middlewares := []Middleware{
+// order they must run: correlate, log, protect, bound.
+//
+// Throttling is not here on purpose. It depends on what the endpoint does and,
+// for authenticated traffic, on who is calling, so each service adds it around
+// the routes it serves.
+func BaseMiddlewares(logger *slog.Logger, allowedOrigins []string, requestTimeout time.Duration) []Middleware {
+	return []Middleware{
 		RequestID(),
 		Logger(logger),
 		Recover(logger),
 		CORS(allowedOrigins),
+		Timeout(requestTimeout),
 	}
-	if limiter != nil {
-		middlewares = append(middlewares, limiter.Middleware())
-	}
-	return append(middlewares, Timeout(requestTimeout))
 }
 
 // RequestIDFrom returns the request id stored in ctx, or an empty string.

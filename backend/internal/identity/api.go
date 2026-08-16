@@ -8,6 +8,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 // maxUserAgentLength bounds what is stored alongside a session.
@@ -26,16 +27,35 @@ func NewAPI(service *Service, issuer *TokenIssuer) *API {
 
 // Routes registers the endpoints. Everything under /auth/me requires a valid
 // access token; the rest is how a token is obtained in the first place.
-func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
-	mux.HandleFunc("POST /auth/register", a.register)
-	mux.HandleFunc("POST /auth/login", a.login)
-	mux.HandleFunc("POST /auth/refresh", a.refresh)
-	mux.HandleFunc("POST /auth/logout", a.logout)
+//
+// Signing in and registering carry the strictest allowance, because they are
+// the endpoints someone guesses at. Refreshing a session is not: it happens on
+// its own every few minutes and throttling it would sign people out.
+func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits) {
+	auth := ratelimit.Middleware(limits.Limiter, limits.Auth, ratelimit.ByClientIP)
+	read := ratelimit.Middleware(limits.Limiter, limits.Read, ratelimit.ByUser)
+	write := ratelimit.Middleware(limits.Limiter, limits.Write, ratelimit.ByUser)
+
+	mux.Handle("POST /auth/register", auth(http.HandlerFunc(a.register)))
+	mux.Handle("POST /auth/login", auth(http.HandlerFunc(a.login)))
+	mux.Handle("POST /auth/refresh", write(http.HandlerFunc(a.refresh)))
+	mux.Handle("POST /auth/logout", write(http.HandlerFunc(a.logout)))
+
+	// The key set is read by the other services on start up and whenever they
+	// meet a key they do not know; throttling it would break token checking.
 	mux.HandleFunc("GET /.well-known/jwks.json", a.jwks)
 
 	authenticated := authn.RequireUser(verifier)
-	mux.Handle("GET /auth/me", authenticated(http.HandlerFunc(a.profile)))
-	mux.Handle("DELETE /auth/me", authenticated(http.HandlerFunc(a.deleteAccount)))
+	mux.Handle("GET /auth/me", authenticated(read(http.HandlerFunc(a.profile))))
+	mux.Handle("DELETE /auth/me", authenticated(write(http.HandlerFunc(a.deleteAccount))))
+}
+
+// Limits are the policies the endpoints are served under.
+type Limits struct {
+	Limiter ratelimit.Limiter
+	Auth    ratelimit.Policy
+	Read    ratelimit.Policy
+	Write   ratelimit.Policy
 }
 
 type registerRequest struct {

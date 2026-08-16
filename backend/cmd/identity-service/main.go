@@ -20,6 +20,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/logging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 const serviceName = "identity-service"
@@ -65,7 +66,10 @@ func run() error {
 
 	issuer := identity.NewTokenIssuer(privateKey)
 	store := identity.NewStore(pool)
-	service := identity.NewService(store, issuer)
+	service := identity.NewService(store, issuer).WithLockoutPolicy(identity.LockoutPolicy{
+		MaxFailures: cfg.LoginMaxFailures,
+		Lockout:     cfg.LoginLockout,
+	})
 
 	// The service verifies its own tokens with the key it holds, so it never
 	// calls itself over HTTP.
@@ -73,18 +77,31 @@ func run() error {
 
 	healthHandler := health.NewHandler(cfg.ServiceName, health.Check{Name: "database", Probe: pool.Ping})
 
+	// Throttling: a public floor per address, and per route allowances added by
+	// the API. Health probes and the published key set are exempt, since the
+	// other services read the key set to verify tokens.
+	limiter := ratelimit.NewTokenBucket()
+	publicLimit := ratelimit.Exempt(
+		ratelimit.Middleware(limiter, cfg.RateLimits.Public, ratelimit.ByClientIP),
+		"/health/", "/.well-known/",
+	)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", healthHandler.Live)
 	mux.HandleFunc("GET /health/ready", healthHandler.Ready)
-	identity.NewAPI(service, issuer).Routes(mux, verifier)
+	identity.NewAPI(service, issuer).Routes(mux, verifier, identity.Limits{
+		Limiter: limiter,
+		Auth:    cfg.RateLimits.Auth,
+		Read:    cfg.RateLimits.Read,
+		Write:   cfg.RateLimits.Write,
+	})
 
 	// Sessions that expired long ago are of no use to anyone.
 	go cleanUpExpiredTokens(ctx, store, logger)
 
-	// Sign in is the endpoint worth guessing against, so this service is
-	// throttled harder than the others.
-	limiter := httpx.NewRateLimiter(30, time.Minute)
-	handler := httpx.Chain(mux, httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout, limiter)...)
+	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout)
+	middlewares = append(middlewares, publicLimit)
+	handler := httpx.Chain(mux, middlewares...)
 
 	return httpx.Serve(ctx, httpx.ServerConfig{
 		Addr:            cfg.HTTPAddr,

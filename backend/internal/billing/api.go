@@ -9,6 +9,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
 // API exposes the billing use cases over HTTP.
@@ -26,18 +27,32 @@ func NewAPI(service *Service, assistant *DraftAssistant) *API {
 
 // Routes registers the invoice endpoints on the given mux. They are only
 // served to a signed in user.
-func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier) {
+//
+// Throttling sits inside the guard so it counts against the person signed in,
+// and each category gets its own allowance: reading an invoice while it prints
+// must not be spent by the same budget as issuing invoices.
+func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits) {
 	guard := authn.RequireUser(verifier)
+	read := ratelimit.Middleware(limits.Limiter, limits.Read, ratelimit.ByUser)
+	write := ratelimit.Middleware(limits.Limiter, limits.Write, ratelimit.ByUser)
+	assistant := ratelimit.Middleware(limits.Limiter, limits.AI, ratelimit.ByUser)
 
-	mux.Handle("POST /invoices", guard(http.HandlerFunc(a.createInvoice)))
-	mux.Handle("GET /invoices", guard(http.HandlerFunc(a.listInvoices)))
-	mux.Handle("GET /invoices/{id}", guard(http.HandlerFunc(a.getInvoice)))
-	mux.Handle("POST /invoices/{id}/print", guard(http.HandlerFunc(a.printInvoice)))
+	mux.Handle("POST /invoices", guard(write(http.HandlerFunc(a.createInvoice))))
+	mux.Handle("GET /invoices", guard(read(http.HandlerFunc(a.listInvoices))))
+	mux.Handle("GET /invoices/{id}", guard(read(http.HandlerFunc(a.getInvoice))))
+	mux.Handle("POST /invoices/{id}/print", guard(write(http.HandlerFunc(a.printInvoice))))
 
-	// Drafting costs money on every call, so it is throttled on its own.
-	draftLimiter := httpx.NewRateLimiter(20, time.Minute)
-	mux.Handle("POST /invoices/draft", guard(draftLimiter.Middleware()(http.HandlerFunc(a.draftInvoice))))
-	mux.Handle("GET /invoices/draft", guard(http.HandlerFunc(a.assistantStatus)))
+	// Drafting is paid for on every call, so it has the tightest allowance.
+	mux.Handle("POST /invoices/draft", guard(assistant(http.HandlerFunc(a.draftInvoice))))
+	mux.Handle("GET /invoices/draft", guard(read(http.HandlerFunc(a.assistantStatus))))
+}
+
+// Limits are the policies the endpoints are served under.
+type Limits struct {
+	Limiter ratelimit.Limiter
+	Read    ratelimit.Policy
+	Write   ratelimit.Policy
+	AI      ratelimit.Policy
 }
 
 type draftRequest struct {
