@@ -1,0 +1,43 @@
+# Local infrastructure for the invoice system.
+# Credentials here are development only and must never be reused elsewhere.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: korp-postgres
+    environment:
+      POSTGRES_USER: korp
+      POSTGRES_PASSWORD: korp
+      POSTGRES_DB: postgres
+    ports:
+      # 5433 on the host keeps this project independent of any other local
+      # PostgreSQL already bound to the default port.
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U korp -d postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: korp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: korp
+      RABBITMQ_DEFAULT_PASS: korp
+    ports:
+      - '5672:5672' # AMQP
+      - '15672:15672' # management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  postgres-data:
+  rabbitmq-data:

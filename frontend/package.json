@@ -1,0 +1,63 @@
+{
+  "name": "invoice-system-frontend",
+  "displayName": "Invoice System",
+  "version": "0.1.0",
+  "description": "Angular frontend of the invoice system: products, invoices and printing.",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --open",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test --watch=false",
+    "test:e2e": "npx playwright test --ui",
+    "prettier": "prettier --config ./.prettierrc --write \"src/{app,environments}/**/*{.ts,.html,.scss,.json}\"",
+    "prettier:verify": "prettier --config ./.prettierrc --check \"src/{app,environments}/**/*{.ts,.html,.scss,.json}\"",
+    "prettier:staged": "pretty-quick --staged",
+    "lint": "ng lint",
+    "test:watch": "ng test"
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/animations": "^22.0.2",
+    "@angular/common": "^22.0.2",
+    "@angular/compiler": "^22.0.2",
+    "@angular/core": "^22.0.2",
+    "@angular/forms": "^22.0.2",
+    "@angular/platform-browser": "^22.0.2",
+    "@angular/platform-browser-dynamic": "^22.0.2",
+    "@angular/router": "^22.0.2",
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/postcss": "^4.3.1",
+    "@tailwindcss/typography": "^0.5.16",
+    "angular-svg-icon": "^13.0.0",
+    "apexcharts": "^3.35.3",
+    "ng-apexcharts": "^1.7.1",
+    "ngx-sonner": "^2.0.1",
+    "rxjs": "^7.8.2",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.0.3",
+    "@angular/cli": "^22.0.3",
+    "@angular/compiler-cli": "^22.0.2",
+    "@playwright/test": "^1.50.1",
+    "@types/node": "^26.0.0",
+    "autoprefixer": "^10.4.7",
+    "cz-conventional-changelog": "^3.3.0",
+    "istanbul-lib-instrument": "^6.0.3",
+    "jsdom": "^30.0.1",
+    "postcss": "^8.5.3",
+    "prettier": "^3.7.4",
+    "prettier-plugin-tailwindcss": "^0.8.0",
+    "tailwind-scrollbar": "^4.0.2",
+    "tailwindcss": "^4.3.1",
+    "typescript": "~6.0.3",
+    "vitest": "^4.0.8"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}

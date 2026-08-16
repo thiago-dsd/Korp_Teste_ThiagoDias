@@ -1,0 +1,175 @@
+package billing
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+)
+
+// API exposes the billing use cases over HTTP.
+type API struct {
+	service *Service
+}
+
+// NewAPI builds the HTTP layer of the billing service.
+func NewAPI(service *Service) *API {
+	return &API{service: service}
+}
+
+// Routes registers the invoice endpoints on the given mux.
+func (a *API) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /invoices", a.createInvoice)
+	mux.HandleFunc("GET /invoices", a.listInvoices)
+	mux.HandleFunc("GET /invoices/{id}", a.getInvoice)
+	mux.HandleFunc("POST /invoices/{id}/print", a.printInvoice)
+}
+
+type createInvoiceRequest struct {
+	Items []invoiceItemRequest `json:"items"`
+}
+
+type invoiceItemRequest struct {
+	ProductID uuid.UUID `json:"product_id"`
+	Quantity  int       `json:"quantity"`
+}
+
+type invoiceResponse struct {
+	ID     uuid.UUID             `json:"id"`
+	Number int64                 `json:"number"`
+	Status Status                `json:"status"`
+	Items  []invoiceItemResponse `json:"items"`
+	// Failure explains why the last print attempt did not go through, so the
+	// screen can show the operator what happened.
+	Failure   *invoiceFailure `json:"failure"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	PrintedAt *time.Time      `json:"printed_at"`
+}
+
+type invoiceFailure struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+type invoiceItemResponse struct {
+	ID                 uuid.UUID `json:"id"`
+	ProductID          uuid.UUID `json:"product_id"`
+	ProductCode        string    `json:"product_code"`
+	ProductDescription string    `json:"product_description"`
+	Quantity           int       `json:"quantity"`
+}
+
+type invoiceListResponse struct {
+	Items []invoiceResponse `json:"items"`
+}
+
+func (a *API) createInvoice(w http.ResponseWriter, r *http.Request) {
+	var request createInvoiceRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	inputs := make([]ItemInput, 0, len(request.Items))
+	for _, item := range request.Items {
+		inputs = append(inputs, ItemInput{ProductID: item.ProductID, Quantity: item.Quantity})
+	}
+
+	invoice, err := a.service.CreateInvoice(r.Context(), inputs)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	w.Header().Set("Location", "/invoices/"+invoice.ID.String())
+	httpx.WriteJSON(w, r, http.StatusCreated, toInvoiceResponse(invoice))
+}
+
+func (a *API) listInvoices(w http.ResponseWriter, r *http.Request) {
+	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+
+	invoices, err := a.service.ListInvoices(r.Context(), status)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	items := make([]invoiceResponse, 0, len(invoices))
+	for _, invoice := range invoices {
+		items = append(items, toInvoiceResponse(invoice))
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, invoiceListResponse{Items: items})
+}
+
+func (a *API) getInvoice(w http.ResponseWriter, r *http.Request) {
+	id, err := invoiceID(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	invoice, err := a.service.GetInvoice(r.Context(), id)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, toInvoiceResponse(invoice))
+}
+
+// printInvoice starts printing an invoice. It answers 202 Accepted with the
+// invoice in PRINTING: the balances are debited asynchronously and the client
+// follows the outcome by reading the invoice.
+func (a *API) printInvoice(w http.ResponseWriter, r *http.Request) {
+	id, err := invoiceID(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	invoice, err := a.service.RequestPrint(r.Context(), id)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusAccepted, toInvoiceResponse(invoice))
+}
+
+func invoiceID(r *http.Request) (uuid.UUID, error) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		return uuid.Nil, apperr.Invalid("invalid_invoice_id", "Invoice id is not a valid identifier.").WithCause(err)
+	}
+	return id, nil
+}
+
+func toInvoiceResponse(invoice Invoice) invoiceResponse {
+	items := make([]invoiceItemResponse, 0, len(invoice.Items))
+	for _, item := range invoice.Items {
+		items = append(items, invoiceItemResponse{
+			ID:                 item.ID,
+			ProductID:          item.ProductID,
+			ProductCode:        item.ProductCode,
+			ProductDescription: item.ProductDescription,
+			Quantity:           item.Quantity,
+		})
+	}
+	var failure *invoiceFailure
+	if invoice.FailureCode != "" {
+		failure = &invoiceFailure{Code: invoice.FailureCode, Message: invoice.FailureMessage}
+	}
+
+	return invoiceResponse{
+		ID:        invoice.ID,
+		Number:    invoice.Number,
+		Status:    invoice.Status,
+		Items:     items,
+		Failure:   failure,
+		CreatedAt: invoice.CreatedAt,
+		UpdatedAt: invoice.UpdatedAt,
+		PrintedAt: invoice.PrintedAt,
+	}
+}

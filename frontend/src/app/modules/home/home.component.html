@@ -1,0 +1,20 @@
+<div class="space-y-6">
+  <div>
+    <h1 class="text-foreground text-2xl font-semibold">Invoice System</h1>
+    <p class="text-muted-foreground mt-1 text-sm">
+      Register products, issue invoices and print them. Stock balances are updated when an invoice is closed.
+    </p>
+  </div>
+
+  <div class="grid gap-4 md:grid-cols-3">
+    @for (step of steps; track step.title) {
+      <div class="bg-background border-muted space-y-3 rounded-md border border-dashed p-5">
+        <div class="bg-primary/10 flex h-10 w-10 items-center justify-center rounded-md">
+          <svg-icon [src]="step.icon" [svgClass]="'h-5 w-5 text-primary'"></svg-icon>
+        </div>
+        <h2 class="text-foreground font-semibold">{{ step.title }}</h2>
+        <p class="text-muted-foreground text-sm">{{ step.description }}</p>
+      </div>
+    }
+  </div>
+</div>

@@ -1,0 +1,18 @@
+import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Router } from '@angular/router';
+import { AngularSvgIconModule } from 'angular-svg-icon';
+import { ButtonComponent } from 'src/app/shared/components/button/button.component';
+
+@Component({
+  selector: 'app-error500',
+  imports: [AngularSvgIconModule, ButtonComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
+  templateUrl: './error500.component.html',
+})
+export class Error500Component {
+  constructor(private router: Router) {}
+
+  goToHomePage() {
+    this.router.navigate(['/']);
+  }
+}

@@ -1,0 +1,38 @@
+# Claude context (never versioned)
+CLAUDE.md
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+coverage/
+npm-debug.log*
+yarn-error.log*
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+
+# Go
+bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
