@@ -70,6 +70,20 @@ after the answer comes back, not by the prompt.
 Set `AZURE_AI_FOUNDRY_ENDPOINT`, `AZURE_AI_FOUNDRY_API_KEY` and `AZURE_AI_FOUNDRY_DEPLOYMENT` to
 enable it. Without them the screen does not offer the assistant and invoices are written by hand.
 
+### Listings
+
+`GET /products` and `GET /invoices` answer one page at a time:
+
+```
+GET /products?limit=20&search=bolt        ->  { "items": [...], "next_cursor": "..." }
+GET /products?limit=20&cursor=<next_cursor>   the following page
+```
+
+Paging is done by cursor rather than by offset. The page is cut by the value of the column the
+listing is ordered by, so a product registered while someone is paging never makes an item show up
+twice or disappear, and reading page fifty costs the same as reading page one. The cursor is
+opaque: clients pass back what they received. Pages hold 20 items by default and 100 at most.
+
 ### Failure scenarios
 
 | Scenario | What happens |

@@ -12,7 +12,7 @@ type ProductRepository interface {
 	Update(ctx context.Context, product Product) (Product, error)
 	GetByID(ctx context.Context, id uuid.UUID) (Product, error)
 	GetByCode(ctx context.Context, code string) (Product, error)
-	List(ctx context.Context, search string) ([]Product, error)
+	List(ctx context.Context, query Query) (Page, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]Product, error)
 }
 
@@ -52,9 +52,9 @@ func (s *Service) GetProduct(ctx context.Context, id uuid.UUID) (Product, error)
 	return s.products.GetByID(ctx, id)
 }
 
-// ListProducts returns the catalog, optionally filtered by a search term.
-func (s *Service) ListProducts(ctx context.Context, search string) ([]Product, error) {
-	return s.products.List(ctx, search)
+// ListProducts returns a page of the catalogue.
+func (s *Service) ListProducts(ctx context.Context, query Query) (Page, error) {
+	return s.products.List(ctx, query)
 }
 
 // FindProducts returns the products with the given ids, reporting an error

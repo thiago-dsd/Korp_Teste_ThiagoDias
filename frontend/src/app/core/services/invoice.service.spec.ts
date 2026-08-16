@@ -7,6 +7,7 @@ import { environment } from 'src/environments/environment';
 import { apiErrorInterceptor } from '../interceptor/api-error.interceptor';
 import { ApiError } from '../models/api-error.model';
 import { Invoice, InvoiceStatus } from '../models/invoice.model';
+import { Page } from '../models/page.model';
 import { InvoiceService } from './invoice.service';
 
 function invoicePayload(status: InvoiceStatus, overrides: Record<string, unknown> = {}) {
@@ -47,22 +48,22 @@ describe('InvoiceService', () => {
   afterEach(() => http.verify());
 
   it('should list invoices mapping items and failure', () => {
-    let invoices: Invoice[] | undefined;
-    service.list().subscribe((result) => (invoices = result));
+    let page: Page<Invoice> | undefined;
+    service.list().subscribe((result) => (page = result));
 
     http.expectOne(baseUrl).flush({
       items: [invoicePayload('OPEN', { failure: { code: 'insufficient_balance', message: 'Not enough.' } })],
     });
 
-    expect(invoices?.length).toBe(1);
-    expect(invoices?.[0].items[0]).toEqual({
+    expect(page?.items.length).toBe(1);
+    expect(page?.items[0].items[0]).toEqual({
       id: 'item-1',
       productId: 'p-1',
       productCode: 'P-1',
       productDescription: 'Steel bolt',
       quantity: 2,
     });
-    expect(invoices?.[0].failure?.code).toBe('insufficient_balance');
+    expect(page?.items[0].failure?.code).toBe('insufficient_balance');
   });
 
   it('should filter the listing by status', () => {
@@ -71,6 +72,29 @@ describe('InvoiceService', () => {
 
     service.list().subscribe();
     http.expectOne((request) => !request.params.has('status'));
+  });
+
+  it('should read the next page with the cursor it received', () => {
+    let page: Page<Invoice> | undefined;
+    service.list().subscribe((result) => (page = result));
+
+    http
+      .expectOne((request) => !request.params.has('cursor'))
+      .flush({
+        items: [invoicePayload('OPEN')],
+        next_cursor: 'cursor-1',
+      });
+    expect(page?.nextCursor).toBe('cursor-1');
+
+    service.list('', 'cursor-1').subscribe((result) => (page = result));
+    http
+      .expectOne((request) => request.params.get('cursor') === 'cursor-1')
+      .flush({
+        items: [invoicePayload('CLOSED')],
+      });
+
+    // No cursor in the answer means the listing ended.
+    expect(page?.nextCursor).toBe('');
   });
 
   it('should create an invoice translating the lines to the API shape', () => {

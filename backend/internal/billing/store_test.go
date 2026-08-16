@@ -96,12 +96,12 @@ func TestStoreCreateRejectsInvalidItemsWithoutLeavingAnInvoice(t *testing.T) {
 		t.Fatal("Create() returned no error for a zero quantity, want one")
 	}
 
-	invoices, err := store.List(ctx, "")
+	invoices, err := store.List(ctx, billing.Query{})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(invoices) != 0 {
-		t.Errorf("invoices = %d, want 0 (the failed creation must roll back)", len(invoices))
+	if len(invoices.Items) != 0 {
+		t.Errorf("invoices = %d, want 0 (the failed creation must roll back)", len(invoices.Items))
 	}
 }
 
@@ -124,17 +124,17 @@ func TestStoreListOrdersByNewestNumberAndLoadsItems(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	invoices, err := store.List(ctx, "")
+	invoices, err := store.List(ctx, billing.Query{})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(invoices) != 2 {
-		t.Fatalf("invoices = %d, want 2", len(invoices))
+	if len(invoices.Items) != 2 {
+		t.Fatalf("invoices = %d, want 2", len(invoices.Items))
 	}
-	if invoices[0].ID != second.ID || invoices[1].ID != first.ID {
+	if invoices.Items[0].ID != second.ID || invoices.Items[1].ID != first.ID {
 		t.Error("invoices are not ordered from the newest to the oldest")
 	}
-	for _, invoice := range invoices {
+	for _, invoice := range invoices.Items {
 		if len(invoice.Items) != 2 {
 			t.Errorf("invoice %d has %d items, want 2", invoice.Number, len(invoice.Items))
 		}
@@ -147,32 +147,32 @@ func TestStoreListFiltersByStatus(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	open, err := store.List(ctx, string(billing.StatusOpen))
+	open, err := store.List(ctx, billing.Query{Status: string(billing.StatusOpen)})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(open) != 1 {
-		t.Errorf("open invoices = %d, want 1", len(open))
+	if len(open.Items) != 1 {
+		t.Errorf("open invoices = %d, want 1", len(open.Items))
 	}
 
-	closed, err := store.List(ctx, string(billing.StatusClosed))
+	closed, err := store.List(ctx, billing.Query{Status: string(billing.StatusClosed)})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(closed) != 0 {
-		t.Errorf("closed invoices = %d, want 0", len(closed))
+	if len(closed.Items) != 0 {
+		t.Errorf("closed invoices = %d, want 0", len(closed.Items))
 	}
 }
 
 func TestStoreListReturnsEmptySlice(t *testing.T) {
 	ctx, store := newTestStore(t)
 
-	invoices, err := store.List(ctx, "")
+	invoices, err := store.List(ctx, billing.Query{})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if invoices == nil {
-		t.Fatal("List() = nil, want an empty slice")
+	if invoices.Items == nil {
+		t.Fatal("List() returned nil items, want an empty slice")
 	}
 }
 
@@ -217,4 +217,92 @@ func TestStoreCreateAssignsUniqueNumbersConcurrently(t *testing.T) {
 	if len(numbers) != creations {
 		t.Errorf("distinct numbers = %d, want %d", len(numbers), creations)
 	}
+}
+
+func TestStoreListPagesFromTheNewestInvoice(t *testing.T) {
+	ctx, store := newTestStore(t)
+	for range 5 {
+		if _, err := store.Create(ctx, sampleItems()); err != nil {
+			t.Fatalf("Create() returned error: %v", err)
+		}
+	}
+
+	first, err := store.List(ctx, billing.Query{Limit: 2})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(first.Items) != 2 || first.Items[0].Number != 5 || first.Items[1].Number != 4 {
+		t.Fatalf("first page = %v, want invoices 5 and 4", numbersOf(first.Items))
+	}
+	if first.NextCursor == "" {
+		t.Fatal("first page has no cursor, want one")
+	}
+	// Items are loaded for every invoice on the page, not only the first.
+	for _, invoice := range first.Items {
+		if len(invoice.Items) != 2 {
+			t.Errorf("invoice %d has %d items, want 2", invoice.Number, len(invoice.Items))
+		}
+	}
+
+	second, err := store.List(ctx, billing.Query{Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(second.Items) != 2 || second.Items[0].Number != 3 {
+		t.Fatalf("second page = %v, want invoices 3 and 2", numbersOf(second.Items))
+	}
+
+	last, err := store.List(ctx, billing.Query{Limit: 2, Cursor: second.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(last.Items) != 1 || last.Items[0].Number != 1 {
+		t.Fatalf("last page = %v, want invoice 1", numbersOf(last.Items))
+	}
+	if last.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want it empty on the last page", last.NextCursor)
+	}
+}
+
+// Invoices issued while someone is paging appear on the first page next time,
+// and never shift what was already read.
+func TestStoreListIsStableWhenInvoicesAreIssuedWhilePaging(t *testing.T) {
+	ctx, store := newTestStore(t)
+	for range 3 {
+		if _, err := store.Create(ctx, sampleItems()); err != nil {
+			t.Fatalf("Create() returned error: %v", err)
+		}
+	}
+
+	first, err := store.List(ctx, billing.Query{Limit: 2})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if _, err := store.Create(ctx, sampleItems()); err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	second, err := store.List(ctx, billing.Query{Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(second.Items) != 1 || second.Items[0].Number != 1 {
+		t.Errorf("second page = %v, want only invoice 1", numbersOf(second.Items))
+	}
+}
+
+func TestStoreListRejectsACursorItDidNotProduce(t *testing.T) {
+	ctx, store := newTestStore(t)
+
+	if _, err := store.List(ctx, billing.Query{Cursor: "not-a-cursor"}); err == nil {
+		t.Error("List() accepted a made up cursor, want an error")
+	}
+}
+
+func numbersOf(invoices []billing.Invoice) []int64 {
+	numbers := make([]int64, 0, len(invoices))
+	for _, invoice := range invoices {
+		numbers = append(numbers, invoice.Number)
+	}
+	return numbers
 }

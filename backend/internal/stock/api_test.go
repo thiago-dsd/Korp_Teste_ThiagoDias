@@ -10,9 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"slices"
+
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 	"github.com/thiagodias/korp-invoices/internal/stock"
 )
 
@@ -80,20 +83,44 @@ func (r *memoryRepository) GetByCode(ctx context.Context, code string) (stock.Pr
 	return stock.Product{}, stock.ErrProductNotFound
 }
 
-func (r *memoryRepository) List(ctx context.Context, search string) ([]stock.Product, error) {
+func (r *memoryRepository) List(ctx context.Context, query stock.Query) (stock.Page, error) {
 	if r.failWith != nil {
-		return nil, r.failWith
+		return stock.Page{}, r.failWith
 	}
+
 	products := make([]stock.Product, 0, len(r.products))
 	for _, product := range r.products {
-		matches := search == "" ||
-			strings.Contains(strings.ToLower(product.Code), strings.ToLower(search)) ||
-			strings.Contains(strings.ToLower(product.Description), strings.ToLower(search))
+		matches := query.Search == "" ||
+			strings.Contains(strings.ToLower(product.Code), strings.ToLower(query.Search)) ||
+			strings.Contains(strings.ToLower(product.Description), strings.ToLower(query.Search))
 		if matches {
 			products = append(products, product)
 		}
 	}
-	return products, nil
+	slices.SortFunc(products, func(a, b stock.Product) int {
+		return strings.Compare(strings.ToUpper(a.Code), strings.ToUpper(b.Code))
+	})
+
+	// The fake pages the same way the store does: cut by the last code seen.
+	cursor, err := pagination.Decode(query.Cursor)
+	if err != nil {
+		return stock.Page{}, err
+	}
+	if cursor.Key != "" {
+		products = slices.DeleteFunc(products, func(product stock.Product) bool {
+			return strings.ToUpper(product.Code) <= cursor.Key
+		})
+	}
+
+	limit := pagination.NormalizeLimit(query.Limit)
+	page := stock.Page{Items: products}
+	if len(products) > limit {
+		page.Items = products[:limit]
+		page.NextCursor = pagination.Encode(pagination.Cursor{
+			Key: strings.ToUpper(page.Items[len(page.Items)-1].Code),
+		})
+	}
+	return page, nil
 }
 
 func (r *memoryRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]stock.Product, error) {

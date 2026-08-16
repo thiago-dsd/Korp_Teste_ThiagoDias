@@ -4,6 +4,7 @@ import { Observable, map, switchMap, takeWhile, timer } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
 import { DraftLine, Invoice, InvoiceDraft, InvoiceItem, InvoiceStatus, NewInvoiceItem } from '../models/invoice.model';
+import { Page } from '../models/page.model';
 import { idempotencyHeaders } from './product.service';
 
 /**
@@ -37,6 +38,7 @@ interface InvoiceItemPayload {
 
 interface InvoiceListPayload {
   items: InvoicePayload[];
+  next_cursor?: string;
 }
 
 interface DraftPayload {
@@ -64,16 +66,27 @@ export class InvoiceService {
   private readonly pollInterval = inject(PRINT_POLL_INTERVAL);
   private readonly baseUrl = `${environment.billingApiUrl}/invoices`;
 
-  /** Lists invoices, optionally filtered by status. */
-  list(status: InvoiceStatus | '' = ''): Observable<Invoice[]> {
+  /**
+   * Reads a page of invoices, newest first, optionally filtered by status.
+   *
+   * Pass the cursor of the previous page to read the next one; an empty cursor
+   * in the answer means there is nothing left.
+   */
+  list(status: InvoiceStatus | '' = '', cursor = ''): Observable<Page<Invoice>> {
     let params = new HttpParams();
     if (status) {
       params = params.set('status', status);
     }
+    if (cursor) {
+      params = params.set('cursor', cursor);
+    }
 
-    return this.http
-      .get<InvoiceListPayload>(this.baseUrl, { params })
-      .pipe(map((payload) => payload.items.map(toInvoice)));
+    return this.http.get<InvoiceListPayload>(this.baseUrl, { params }).pipe(
+      map((payload) => ({
+        items: payload.items.map(toInvoice),
+        nextCursor: payload.next_cursor ?? '',
+      })),
+    );
   }
 
   /** Loads a single invoice with its items. */

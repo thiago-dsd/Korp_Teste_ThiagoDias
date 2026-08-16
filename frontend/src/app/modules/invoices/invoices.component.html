@@ -92,4 +92,16 @@
       </tbody>
     </table>
   </div>
+
+  @if (hasMore()) {
+    <div class="flex justify-center">
+      <button
+        type="button"
+        (click)="loadMore()"
+        [disabled]="loadingMore()"
+        class="border-muted text-foreground rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
+        {{ loadingMore() ? 'Loading…' : 'Load more' }}
+      </button>
+    </div>
+  }
 </div>

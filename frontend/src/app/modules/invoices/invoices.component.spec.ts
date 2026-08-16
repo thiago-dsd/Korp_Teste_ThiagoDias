@@ -128,4 +128,44 @@ describe('InvoicesComponent', () => {
 
     expect(text()).toContain('No invoices with this filter.');
   });
+
+  it('should append the next page of invoices', async () => {
+    http.expectOne(invoicesUrl).flush({
+      items: [invoicePayload('i-3', 3, 'OPEN')],
+      next_cursor: 'cursor-3',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.hasMore()).toBe(true);
+
+    component.loadMore();
+    http
+      .expectOne((request) => request.params.get('cursor') === 'cursor-3')
+      .flush({
+        items: [invoicePayload('i-2', 2, 'CLOSED')],
+      });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.items().map((invoice) => invoice.number)).toEqual([3, 2]);
+    expect(component.hasMore()).toBe(false);
+  });
+
+  it('should start over when the filter changes', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [invoicePayload('i-3', 3, 'OPEN')], next_cursor: 'cursor-3' });
+    await fixture.whenStable();
+
+    component.selectFilter('CLOSED');
+
+    // A new filter reads the first page again, without carrying the cursor.
+    const filtered = http.expectOne(
+      (request) => request.params.get('status') === 'CLOSED' && !request.params.has('cursor'),
+    );
+    filtered.flush({ items: [invoicePayload('i-2', 2, 'CLOSED')] });
+    await fixture.whenStable();
+
+    expect(component.items().map((invoice) => invoice.number)).toEqual([2]);
+    expect(component.hasMore()).toBe(false);
+  });
 });

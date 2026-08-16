@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 // Store persists invoices in PostgreSQL.
@@ -80,50 +83,97 @@ func (s *Store) GetByID(ctx context.Context, id uuid.UUID) (Invoice, error) {
 	return invoice, nil
 }
 
-// List returns invoices ordered from the newest to the oldest number,
-// optionally filtered by status.
-func (s *Store) List(ctx context.Context, status string) ([]Invoice, error) {
+// Query describes a page of invoices.
+type Query struct {
+	// Status filters the listing when it is not empty.
+	Status string
+	// Limit is how many invoices to return.
+	Limit int
+	// Cursor points at the end of the previous page.
+	Cursor string
+}
+
+// Page is a slice of the listing plus how to ask for the next one.
+type Page struct {
+	Items []Invoice
+	// NextCursor is empty when the last page was reached.
+	NextCursor string
+}
+
+// List returns a page of invoices, from the newest number to the oldest.
+//
+// Pages are cut by invoice number instead of by an offset, so invoices issued
+// while someone is paging do not push items from one page to the next.
+func (s *Store) List(ctx context.Context, query Query) (Page, error) {
+	limit := pagination.NormalizeLimit(query.Limit)
+
+	cursor, err := pagination.Decode(query.Cursor)
+	if err != nil {
+		return Page{}, err
+	}
+
+	// An empty cursor starts above the highest number in use.
+	before := int64(math.MaxInt64)
+	if cursor.Key != "" {
+		before, err = strconv.ParseInt(cursor.Key, 10, 64)
+		if err != nil {
+			return Page{}, pagination.ErrInvalidCursor.WithCause(err)
+		}
+	}
+
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+invoiceColumns+`
 		FROM invoices
-		WHERE $1 = '' OR status = $1
-		ORDER BY number DESC`, status)
+		WHERE ($1 = '' OR status = $1)
+		  AND number < $2
+		ORDER BY number DESC
+		LIMIT $3`, query.Status, before, limit+1)
 	if err != nil {
-		return nil, fmt.Errorf("select invoices: %w", err)
+		return Page{}, fmt.Errorf("select invoices: %w", err)
 	}
 	defer rows.Close()
 
-	invoices := make([]Invoice, 0)
-	byID := make(map[uuid.UUID]int)
+	invoices := make([]Invoice, 0, limit)
 	for rows.Next() {
 		invoice, err := scanInvoice(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan invoice: %w", err)
+			return Page{}, fmt.Errorf("scan invoice: %w", err)
 		}
-		byID[invoice.ID] = len(invoices)
 		invoices = append(invoices, invoice)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read invoices: %w", err)
-	}
-	if len(invoices) == 0 {
-		return invoices, nil
+		return Page{}, fmt.Errorf("read invoices: %w", err)
 	}
 
-	// One extra query loads the items of every listed invoice, instead of one
-	// query per invoice.
-	ids := make([]uuid.UUID, 0, len(invoices))
-	for _, invoice := range invoices {
+	page := Page{Items: invoices}
+	if len(invoices) > limit {
+		page.Items = invoices[:limit]
+		last := page.Items[len(page.Items)-1]
+		page.NextCursor = pagination.Encode(pagination.Cursor{
+			Key: strconv.FormatInt(last.Number, 10),
+			ID:  last.ID.String(),
+		})
+	}
+	if len(page.Items) == 0 {
+		return page, nil
+	}
+
+	byID := make(map[uuid.UUID]int, len(page.Items))
+	ids := make([]uuid.UUID, 0, len(page.Items))
+	for index, invoice := range page.Items {
+		byID[invoice.ID] = index
 		ids = append(ids, invoice.ID)
 	}
 
+	// One extra query loads the items of every invoice on the page, instead of
+	// one query per invoice.
 	itemRows, err := s.pool.Query(ctx, `
 		SELECT invoice_id, id, product_id, product_code, product_description, quantity
 		FROM invoice_items
 		WHERE invoice_id = ANY($1)
 		ORDER BY product_code`, ids)
 	if err != nil {
-		return nil, fmt.Errorf("select invoice items: %w", err)
+		return Page{}, fmt.Errorf("select invoice items: %w", err)
 	}
 	defer itemRows.Close()
 
@@ -132,16 +182,16 @@ func (s *Store) List(ctx context.Context, status string) ([]Invoice, error) {
 		var item Item
 		if err := itemRows.Scan(&invoiceID, &item.ID, &item.ProductID,
 			&item.ProductCode, &item.ProductDescription, &item.Quantity); err != nil {
-			return nil, fmt.Errorf("scan invoice item: %w", err)
+			return Page{}, fmt.Errorf("scan invoice item: %w", err)
 		}
 		if position, ok := byID[invoiceID]; ok {
-			invoices[position].Items = append(invoices[position].Items, item)
+			page.Items[position].Items = append(page.Items[position].Items, item)
 		}
 	}
 	if err := itemRows.Err(); err != nil {
-		return nil, fmt.Errorf("read invoice items: %w", err)
+		return Page{}, fmt.Errorf("read invoice items: %w", err)
 	}
-	return invoices, nil
+	return page, nil
 }
 
 func (s *Store) itemsOf(ctx context.Context, invoiceID uuid.UUID) ([]Item, error) {

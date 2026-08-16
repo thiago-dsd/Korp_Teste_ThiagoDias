@@ -85,8 +85,8 @@ export class InvoiceNewComponent implements OnInit {
       .list()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (products) => {
-          this.catalogue.set(products);
+        next: (page) => {
+          this.catalogue.set(page.items);
           this.loadingCatalogue.set(false);
         },
         error: (error: ApiError) => {

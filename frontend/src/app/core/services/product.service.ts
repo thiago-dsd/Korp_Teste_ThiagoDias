@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
+import { Page } from '../models/page.model';
 import { NewProduct, Product, ProductUpdate } from '../models/product.model';
 
 /** Product as it travels on the wire. */
@@ -17,6 +18,7 @@ interface ProductPayload {
 
 interface ProductListPayload {
   items: ProductPayload[];
+  next_cursor?: string;
 }
 
 /**
@@ -31,16 +33,27 @@ export class ProductService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = `${environment.stockApiUrl}/products`;
 
-  /** Lists products, optionally filtered by code or description. */
-  list(search = ''): Observable<Product[]> {
+  /**
+   * Reads a page of products, optionally filtered by code or description.
+   *
+   * Pass the cursor of the previous page to read the next one; an empty cursor
+   * in the answer means there is nothing left.
+   */
+  list(search = '', cursor = ''): Observable<Page<Product>> {
     let params = new HttpParams();
     if (search.trim()) {
       params = params.set('search', search.trim());
     }
+    if (cursor) {
+      params = params.set('cursor', cursor);
+    }
 
-    return this.http
-      .get<ProductListPayload>(this.baseUrl, { params })
-      .pipe(map((payload) => payload.items.map(toProduct)));
+    return this.http.get<ProductListPayload>(this.baseUrl, { params }).pipe(
+      map((payload) => ({
+        items: payload.items.map(toProduct),
+        nextCursor: payload.next_cursor ?? '',
+      })),
+    );
   }
 
   /** Loads a single product. */

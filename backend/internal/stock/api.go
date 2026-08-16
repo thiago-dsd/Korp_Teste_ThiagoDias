@@ -9,6 +9,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 const (
@@ -141,6 +142,9 @@ type productResponse struct {
 
 type productListResponse struct {
 	Items []productResponse `json:"items"`
+	// NextCursor is passed back to read the following page; it is empty on the
+	// last one.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 func (a *API) createProduct(w http.ResponseWriter, r *http.Request) {
@@ -161,24 +165,36 @@ func (a *API) createProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) listProducts(w http.ResponseWriter, r *http.Request) {
-	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	query := r.URL.Query()
+
+	search := strings.TrimSpace(query.Get("search"))
 	if len([]rune(search)) > maxSearchLength {
 		httpx.WriteError(w, r, apperr.Invalid("invalid_search", "Search term is too long.").
 			WithDetails(map[string]string{"search": "must have at most 100 characters"}))
 		return
 	}
 
-	products, err := a.service.ListProducts(r.Context(), search)
+	limit, err := pagination.ParseLimit(query.Get("limit"))
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
 
-	items := make([]productResponse, 0, len(products))
-	for _, product := range products {
+	page, err := a.service.ListProducts(r.Context(), Query{
+		Search: search,
+		Limit:  limit,
+		Cursor: query.Get("cursor"),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	items := make([]productResponse, 0, len(page.Items))
+	for _, product := range page.Items {
 		items = append(items, toProductResponse(product))
 	}
-	httpx.WriteJSON(w, r, http.StatusOK, productListResponse{Items: items})
+	httpx.WriteJSON(w, r, http.StatusOK, productListResponse{Items: items, NextCursor: page.NextCursor})
 }
 
 func (a *API) getProduct(w http.ResponseWriter, r *http.Request) {

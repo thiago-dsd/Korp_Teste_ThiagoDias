@@ -28,7 +28,12 @@ export class InvoicesComponent implements OnInit {
 
   readonly items = signal<Invoice[]>([]);
   readonly loading = signal(false);
+  readonly loadingMore = signal(false);
   readonly loadFailure = signal<ApiError | null>(null);
+
+  /** Cursor of the next page, empty when the listing ended. */
+  private readonly nextCursor = signal('');
+  readonly hasMore = computed(() => this.nextCursor() !== '');
 
   /** True while at least one invoice is waiting for the stock service. */
   readonly hasPrinting = computed(() => this.items().some((invoice) => invoice.status === 'PRINTING'));
@@ -50,16 +55,42 @@ export class InvoicesComponent implements OnInit {
     this.loadFailure.set(null);
 
     return this.invoices.list(this.activeFilter()).pipe(
-      tap((invoices) => {
-        this.items.set(invoices);
+      tap((page) => {
+        this.items.set(page.items);
+        this.nextCursor.set(page.nextCursor);
         this.loading.set(false);
       }),
       catchError((error: ApiError) => {
         this.loading.set(false);
         this.loadFailure.set(error);
-        return of([]);
+        return of({ items: [], nextCursor: '' });
       }),
     );
+  }
+
+  /** Appends the next page to what is already on screen. */
+  loadMore(): void {
+    const cursor = this.nextCursor();
+    if (!cursor || this.loadingMore()) {
+      return;
+    }
+
+    this.loadingMore.set(true);
+
+    this.invoices
+      .list(this.activeFilter(), cursor)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (page) => {
+          this.items.update((invoices) => [...invoices, ...page.items]);
+          this.nextCursor.set(page.nextCursor);
+          this.loadingMore.set(false);
+        },
+        error: (error: ApiError) => {
+          this.loadingMore.set(false);
+          this.loadFailure.set(error);
+        },
+      });
   }
 
   selectFilter(status: InvoiceStatus | ''): void {

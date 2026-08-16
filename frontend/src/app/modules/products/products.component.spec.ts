@@ -129,4 +129,52 @@ describe('ProductsComponent', () => {
     http.expectOne((request) => request.method === 'GET' && request.url === baseUrl).flush({ items: [] });
     await fixture.whenStable();
   });
+
+  it('should append the next page when there is more to read', async () => {
+    http.expectOne(baseUrl).flush({
+      items: [productPayload('p-1', 'P-1', 'Steel bolt', 10)],
+      next_cursor: 'cursor-1',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.hasMore()).toBe(true);
+    expect(text()).toContain('Load more');
+
+    component.loadMore();
+
+    const next = http.expectOne((request) => request.params.get('cursor') === 'cursor-1');
+    next.flush({ items: [productPayload('p-2', 'P-2', 'Hammer', 3)] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The page is appended, not replaced.
+    expect(component.items().map((product) => product.code)).toEqual(['P-1', 'P-2']);
+    expect(component.hasMore()).toBe(false);
+    expect(text()).not.toContain('Load more');
+  });
+
+  it('should not offer more pages when the first one is the last', async () => {
+    http.expectOne(baseUrl).flush({ items: [productPayload('p-1', 'P-1', 'Steel bolt', 10)] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.hasMore()).toBe(false);
+    component.loadMore();
+    http.expectNone((request) => request.params.has('cursor'));
+  });
+
+  it('should keep the search term while paging', async () => {
+    http.expectOne(baseUrl).flush({ items: [], next_cursor: 'cursor-1' });
+    await fixture.whenStable();
+
+    component.searchControl.setValue('bolt');
+    component.loadMore();
+
+    const next = http.expectOne(
+      (request) => request.params.get('cursor') === 'cursor-1' && request.params.get('search') === 'bolt',
+    );
+    next.flush({ items: [] });
+    await fixture.whenStable();
+  });
 });

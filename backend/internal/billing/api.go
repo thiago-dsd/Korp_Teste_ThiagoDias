@@ -10,6 +10,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/apperr"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 // API exposes the billing use cases over HTTP.
@@ -140,6 +141,9 @@ type invoiceItemResponse struct {
 
 type invoiceListResponse struct {
 	Items []invoiceResponse `json:"items"`
+	// NextCursor is passed back to read the following page; it is empty on the
+	// last one.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 func (a *API) createInvoice(w http.ResponseWriter, r *http.Request) {
@@ -165,19 +169,29 @@ func (a *API) createInvoice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) listInvoices(w http.ResponseWriter, r *http.Request) {
-	status := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("status")))
+	query := r.URL.Query()
 
-	invoices, err := a.service.ListInvoices(r.Context(), status)
+	limit, err := pagination.ParseLimit(query.Get("limit"))
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
 	}
 
-	items := make([]invoiceResponse, 0, len(invoices))
-	for _, invoice := range invoices {
+	page, err := a.service.ListInvoices(r.Context(), Query{
+		Status: strings.ToUpper(strings.TrimSpace(query.Get("status"))),
+		Limit:  limit,
+		Cursor: query.Get("cursor"),
+	})
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	items := make([]invoiceResponse, 0, len(page.Items))
+	for _, invoice := range page.Items {
 		items = append(items, toInvoiceResponse(invoice))
 	}
-	httpx.WriteJSON(w, r, http.StatusOK, invoiceListResponse{Items: items})
+	httpx.WriteJSON(w, r, http.StatusOK, invoiceListResponse{Items: items, NextCursor: page.NextCursor})
 }
 
 func (a *API) getInvoice(w http.ResponseWriter, r *http.Request) {

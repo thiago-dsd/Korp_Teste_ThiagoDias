@@ -147,49 +147,52 @@ func TestStoreListOrdersByCodeAndFilters(t *testing.T) {
 	createProduct(t, ctx, store, "a-1", "Steel bolt", 10)
 	createProduct(t, ctx, store, "C-3", "Wrench", 7)
 
-	all, err := store.List(ctx, "")
+	all, err := store.List(ctx, stock.Query{})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
 	wantOrder := []string{"a-1", "B-2", "C-3"}
-	if len(all) != len(wantOrder) {
-		t.Fatalf("List() returned %d products, want %d", len(all), len(wantOrder))
+	if len(all.Items) != len(wantOrder) {
+		t.Fatalf("List() returned %d products, want %d", len(all.Items), len(wantOrder))
 	}
 	for i, code := range wantOrder {
-		if all[i].Code != code {
-			t.Errorf("product %d = %q, want %q", i, all[i].Code, code)
+		if all.Items[i].Code != code {
+			t.Errorf("product %d = %q, want %q", i, all.Items[i].Code, code)
 		}
 	}
 
-	filtered, err := store.List(ctx, "bolt")
+	filtered, err := store.List(ctx, stock.Query{Search: "bolt"})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(filtered) != 1 || filtered[0].Code != "a-1" {
-		t.Errorf("List(bolt) = %+v, want only the bolt product", filtered)
+	if len(filtered.Items) != 1 || filtered.Items[0].Code != "a-1" {
+		t.Errorf("List(bolt) = %+v, want only the bolt product", filtered.Items)
 	}
 
-	byCode, err := store.List(ctx, "c-3")
+	byCode, err := store.List(ctx, stock.Query{Search: "c-3"})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if len(byCode) != 1 || byCode[0].Code != "C-3" {
-		t.Errorf("List(c-3) = %+v, want only the wrench product", byCode)
+	if len(byCode.Items) != 1 || byCode.Items[0].Code != "C-3" {
+		t.Errorf("List(c-3) = %+v, want only the wrench product", byCode.Items)
 	}
 }
 
 func TestStoreListReturnsEmptySliceWhenThereAreNoProducts(t *testing.T) {
 	ctx, store, _ := newTestStore(t)
 
-	products, err := store.List(ctx, "")
+	page, err := store.List(ctx, stock.Query{})
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if products == nil {
-		t.Fatal("List() = nil, want an empty slice")
+	if page.Items == nil {
+		t.Fatal("List() returned nil items, want an empty slice")
 	}
-	if len(products) != 0 {
-		t.Errorf("List() returned %d products, want 0", len(products))
+	if len(page.Items) != 0 {
+		t.Errorf("List() returned %d products, want 0", len(page.Items))
+	}
+	if page.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want it empty on the last page", page.NextCursor)
 	}
 }
 
@@ -217,4 +220,105 @@ func TestStoreFindByIDs(t *testing.T) {
 	if len(empty) != 0 {
 		t.Errorf("FindByIDs(nil) returned %d products, want 0", len(empty))
 	}
+}
+
+func TestStoreListPagesThroughTheCatalogue(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	for _, code := range []string{"P-1", "P-2", "P-3", "P-4", "P-5"} {
+		createProduct(t, ctx, store, code, "Product "+code, 1)
+	}
+
+	first, err := store.List(ctx, stock.Query{Limit: 2})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(first.Items) != 2 || first.Items[0].Code != "P-1" || first.Items[1].Code != "P-2" {
+		t.Fatalf("first page = %+v, want P-1 and P-2", codesOf(first.Items))
+	}
+	if first.NextCursor == "" {
+		t.Fatal("first page has no cursor, want one")
+	}
+
+	second, err := store.List(ctx, stock.Query{Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(second.Items) != 2 || second.Items[0].Code != "P-3" {
+		t.Fatalf("second page = %v, want P-3 and P-4", codesOf(second.Items))
+	}
+
+	last, err := store.List(ctx, stock.Query{Limit: 2, Cursor: second.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(last.Items) != 1 || last.Items[0].Code != "P-5" {
+		t.Fatalf("last page = %v, want only P-5", codesOf(last.Items))
+	}
+	if last.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want it empty on the last page", last.NextCursor)
+	}
+}
+
+// A product registered while someone is paging must not push items from the
+// page they already read into the next one, which is what an offset would do.
+func TestStoreListIsStableWhenProductsAreRegisteredWhilePaging(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	for _, code := range []string{"P-2", "P-4", "P-6"} {
+		createProduct(t, ctx, store, code, "Product "+code, 1)
+	}
+
+	first, err := store.List(ctx, stock.Query{Limit: 2})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+
+	// Someone registers a product that sorts before everything read so far.
+	createProduct(t, ctx, store, "P-1", "Latecomer", 1)
+
+	second, err := store.List(ctx, stock.Query{Limit: 2, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	if len(second.Items) != 1 || second.Items[0].Code != "P-6" {
+		t.Errorf("second page = %v, want only P-6 and no repetition", codesOf(second.Items))
+	}
+}
+
+func TestStoreListKeepsTheFilterAcrossPages(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+	createProduct(t, ctx, store, "B-1", "Steel bolt", 1)
+	createProduct(t, ctx, store, "B-2", "Steel bolt long", 1)
+	createProduct(t, ctx, store, "H-1", "Hammer", 1)
+
+	first, err := store.List(ctx, stock.Query{Search: "bolt", Limit: 1})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+	second, err := store.List(ctx, stock.Query{Search: "bolt", Limit: 1, Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatalf("List() returned error: %v", err)
+	}
+
+	if len(second.Items) != 1 || second.Items[0].Code != "B-2" {
+		t.Errorf("second page = %v, want B-2", codesOf(second.Items))
+	}
+	if second.NextCursor != "" {
+		t.Errorf("NextCursor = %q, want it empty: the hammer does not match", second.NextCursor)
+	}
+}
+
+func TestStoreListRejectsACursorItDidNotProduce(t *testing.T) {
+	ctx, store, _ := newTestStore(t)
+
+	if _, err := store.List(ctx, stock.Query{Cursor: "not-a-cursor"}); err == nil {
+		t.Error("List() accepted a made up cursor, want an error")
+	}
+}
+
+func codesOf(products []stock.Product) []string {
+	codes := make([]string, 0, len(products))
+	for _, product := range products {
+		codes = append(codes, product.Code)
+	}
+	return codes
 }

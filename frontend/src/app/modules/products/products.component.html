@@ -88,6 +88,18 @@
     </table>
   </div>
 
+  @if (hasMore()) {
+    <div class="flex justify-center">
+      <button
+        type="button"
+        (click)="loadMore()"
+        [disabled]="loadingMore()"
+        class="border-muted text-foreground rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
+        {{ loadingMore() ? 'Loading…' : 'Load more' }}
+      </button>
+    </div>
+  }
+
   @if (formOpen()) {
     <div class="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
       <div

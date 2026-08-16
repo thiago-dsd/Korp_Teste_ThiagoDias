@@ -12,10 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"slices"
+	"strconv"
+
 	"github.com/google/uuid"
 	"github.com/thiagodias/korp-invoices/internal/billing"
 	"github.com/thiagodias/korp-invoices/internal/billing/stockclient"
 	"github.com/thiagodias/korp-invoices/internal/platform/authn/authntest"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 // signer issues the access tokens the endpoints require.
@@ -104,17 +108,43 @@ func (r *memoryInvoices) ReopenStalePrintings(ctx context.Context, timeout time.
 	return reopened, nil
 }
 
-func (r *memoryInvoices) List(ctx context.Context, status string) ([]billing.Invoice, error) {
+func (r *memoryInvoices) List(ctx context.Context, query billing.Query) (billing.Page, error) {
 	if r.failWith != nil {
-		return nil, r.failWith
+		return billing.Page{}, r.failWith
 	}
+
 	invoices := make([]billing.Invoice, 0, len(r.invoices))
 	for _, invoice := range r.invoices {
-		if status == "" || string(invoice.Status) == status {
+		if query.Status == "" || string(invoice.Status) == query.Status {
 			invoices = append(invoices, invoice)
 		}
 	}
-	return invoices, nil
+	slices.SortFunc(invoices, func(a, b billing.Invoice) int { return int(b.Number - a.Number) })
+
+	// The fake pages the same way the store does: newest number first.
+	cursor, err := pagination.Decode(query.Cursor)
+	if err != nil {
+		return billing.Page{}, err
+	}
+	if cursor.Key != "" {
+		before, err := strconv.ParseInt(cursor.Key, 10, 64)
+		if err != nil {
+			return billing.Page{}, pagination.ErrInvalidCursor
+		}
+		invoices = slices.DeleteFunc(invoices, func(invoice billing.Invoice) bool {
+			return invoice.Number >= before
+		})
+	}
+
+	limit := pagination.NormalizeLimit(query.Limit)
+	page := billing.Page{Items: invoices}
+	if len(invoices) > limit {
+		page.Items = invoices[:limit]
+		page.NextCursor = pagination.Encode(pagination.Cursor{
+			Key: strconv.FormatInt(page.Items[len(page.Items)-1].Number, 10),
+		})
+	}
+	return page, nil
 }
 
 // stubLookup answers product lookups without touching the network.

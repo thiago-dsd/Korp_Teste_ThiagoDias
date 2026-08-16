@@ -11,7 +11,7 @@ import (
 type InvoiceRepository interface {
 	Create(ctx context.Context, items []Item) (Invoice, error)
 	GetByID(ctx context.Context, id uuid.UUID) (Invoice, error)
-	List(ctx context.Context, status string) ([]Invoice, error)
+	List(ctx context.Context, query Query) (Page, error)
 }
 
 // ProductLookup resolves product ids against the stock service.
@@ -81,12 +81,12 @@ func (s *Service) GetInvoice(ctx context.Context, id uuid.UUID) (Invoice, error)
 	return s.invoices.GetByID(ctx, id)
 }
 
-// ListInvoices returns invoices, optionally filtered by status.
-func (s *Service) ListInvoices(ctx context.Context, status string) ([]Invoice, error) {
-	if status != "" && !ValidStatus(status) {
-		return nil, ErrInvalidInvoice.WithDetails(map[string]string{
+// ListInvoices returns a page of invoices, optionally filtered by status.
+func (s *Service) ListInvoices(ctx context.Context, query Query) (Page, error) {
+	if query.Status != "" && !ValidStatus(query.Status) {
+		return Page{}, ErrInvalidInvoice.WithDetails(map[string]string{
 			"status": "must be OPEN, PRINTING or CLOSED",
 		})
 	}
-	return s.invoices.List(ctx, status)
+	return s.invoices.List(ctx, query)
 }

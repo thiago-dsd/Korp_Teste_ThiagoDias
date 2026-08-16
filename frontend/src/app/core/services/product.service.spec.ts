@@ -23,8 +23,8 @@ describe('ProductService', () => {
   afterEach(() => http.verify());
 
   it('should list products mapping the payload', () => {
-    let products: unknown;
-    service.list().subscribe((result) => (products = result));
+    let page: { items: unknown[]; nextCursor: string } | undefined;
+    service.list().subscribe((result) => (page = result));
 
     const request = http.expectOne(baseUrl);
     expect(request.request.method).toBe('GET');
@@ -41,7 +41,7 @@ describe('ProductService', () => {
       ],
     });
 
-    expect(products).toEqual([
+    expect(page?.items).toEqual([
       {
         id: 'p-1',
         code: 'P-1',
@@ -51,6 +51,7 @@ describe('ProductService', () => {
         updatedAt: '2026-01-02T00:00:00Z',
       },
     ]);
+    expect(page?.nextCursor).toBe('');
   });
 
   it('should send the search term only when it is filled', () => {
@@ -59,6 +60,17 @@ describe('ProductService', () => {
 
     service.list('   ').subscribe();
     expect(http.expectOne((request) => !request.params.has('search')).request.method).toBe('GET');
+  });
+
+  it('should read the next page with the cursor it received', () => {
+    let page: { nextCursor: string } | undefined;
+    service.list().subscribe((result) => (page = result));
+
+    http.expectOne((request) => !request.params.has('cursor')).flush({ items: [], next_cursor: 'cursor-1' });
+    expect(page?.nextCursor).toBe('cursor-1');
+
+    service.list('', 'cursor-1').subscribe();
+    http.expectOne((request) => request.params.get('cursor') === 'cursor-1').flush({ items: [] });
   });
 
   it('should create a product with an idempotency key', () => {

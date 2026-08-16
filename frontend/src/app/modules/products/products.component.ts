@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { AngularSvgIconModule } from 'angular-svg-icon';
@@ -30,7 +30,12 @@ export class ProductsComponent implements OnInit {
 
   readonly items = signal<Product[]>([]);
   readonly loading = signal(false);
+  readonly loadingMore = signal(false);
   readonly loadFailure = signal<ApiError | null>(null);
+
+  /** Cursor of the next page, empty when the whole catalogue was read. */
+  private readonly nextCursor = signal('');
+  readonly hasMore = computed(() => this.nextCursor() !== '');
 
   readonly formOpen = signal(false);
   readonly editing = signal<Product | undefined>(undefined);
@@ -62,22 +67,48 @@ export class ProductsComponent implements OnInit {
       .subscribe();
   }
 
-  /** Reads the catalogue, keeping the screen informed while it happens. */
+  /** Reads the first page of the catalogue for a search term. */
   private fetch(search: string) {
     this.loading.set(true);
     this.loadFailure.set(null);
 
     return this.products.list(search).pipe(
-      tap((products) => {
-        this.items.set(products);
+      tap((page) => {
+        this.items.set(page.items);
+        this.nextCursor.set(page.nextCursor);
         this.loading.set(false);
       }),
       catchError((error: ApiError) => {
         this.loading.set(false);
         this.loadFailure.set(error);
-        return of([]);
+        return of({ items: [], nextCursor: '' });
       }),
     );
+  }
+
+  /** Appends the next page to what is already on screen. */
+  loadMore(): void {
+    const cursor = this.nextCursor();
+    if (!cursor || this.loadingMore()) {
+      return;
+    }
+
+    this.loadingMore.set(true);
+
+    this.products
+      .list(this.searchControl.value, cursor)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (page) => {
+          this.items.update((products) => [...products, ...page.items]);
+          this.nextCursor.set(page.nextCursor);
+          this.loadingMore.set(false);
+        },
+        error: (error: ApiError) => {
+          this.loadingMore.set(false);
+          this.loadFailure.set(error);
+        },
+      });
   }
 
   openCreateForm(): void {

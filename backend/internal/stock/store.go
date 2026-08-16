@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 )
 
 // uniqueViolation is the PostgreSQL error code for a unique constraint.
@@ -92,31 +94,71 @@ func (s *Store) GetByCode(ctx context.Context, code string) (Product, error) {
 	return product, nil
 }
 
-// List returns every product ordered by code, optionally filtered by a search
-// term matched against code and description.
-func (s *Store) List(ctx context.Context, search string) ([]Product, error) {
+// Query describes a page of the catalogue.
+type Query struct {
+	// Search filters by code and description.
+	Search string
+	// Limit is how many products to return.
+	Limit int
+	// Cursor points at the end of the previous page.
+	Cursor string
+}
+
+// Page is a slice of the catalogue plus how to ask for the next one.
+type Page struct {
+	Items []Product
+	// NextCursor is empty when the last page was reached.
+	NextCursor string
+}
+
+// List returns a page of products ordered by code.
+//
+// The page is cut by the code of the last item rather than by an offset, so
+// products registered while someone is paging never shift the pages that were
+// already read, and the query stays fast on a large catalogue.
+func (s *Store) List(ctx context.Context, query Query) (Page, error) {
+	limit := pagination.NormalizeLimit(query.Limit)
+
+	cursor, err := pagination.Decode(query.Cursor)
+	if err != nil {
+		return Page{}, err
+	}
+
+	// One extra row tells us whether there is another page, without counting.
 	rows, err := s.pool.Query(ctx, `
 		SELECT `+productColumns+`
 		FROM products
-		WHERE $1 = '' OR code ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%'
-		ORDER BY upper(code)`, search)
+		WHERE ($1 = '' OR code ILIKE '%' || $1 || '%' OR description ILIKE '%' || $1 || '%')
+		  AND ($2 = '' OR upper(code) > $2)
+		ORDER BY upper(code)
+		LIMIT $3`, query.Search, cursor.Key, limit+1)
 	if err != nil {
-		return nil, fmt.Errorf("select products: %w", err)
+		return Page{}, fmt.Errorf("select products: %w", err)
 	}
 	defer rows.Close()
 
-	products := make([]Product, 0)
+	products := make([]Product, 0, limit)
 	for rows.Next() {
 		product, err := scanProduct(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan product: %w", err)
+			return Page{}, fmt.Errorf("scan product: %w", err)
 		}
 		products = append(products, product)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read products: %w", err)
+		return Page{}, fmt.Errorf("read products: %w", err)
 	}
-	return products, nil
+
+	page := Page{Items: products}
+	if len(products) > limit {
+		page.Items = products[:limit]
+		last := page.Items[len(page.Items)-1]
+		page.NextCursor = pagination.Encode(pagination.Cursor{
+			Key: strings.ToUpper(last.Code),
+			ID:  last.ID.String(),
+		})
+	}
+	return page, nil
 }
 
 // FindByIDs returns the products matching the given ids, in code order.
