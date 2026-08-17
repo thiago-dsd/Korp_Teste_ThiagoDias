@@ -25,6 +25,9 @@ type Message struct {
 	OccurredAt time.Time
 	// Attempts is how many times publishing this message was tried.
 	Attempts int
+	// CorrelationID ties the event back to the request that produced it, so the
+	// work it causes in another service can be found in the logs alongside it.
+	CorrelationID string
 }
 
 // NewMessage builds a message with a fresh id, encoding payload as JSON.

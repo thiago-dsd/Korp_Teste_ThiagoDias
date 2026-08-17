@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/messaging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres/pgtest"
 	"github.com/thiagodias/korp-invoices/internal/platform/resilience"
@@ -31,7 +32,8 @@ CREATE TABLE outbox_messages (
     published_at    TIMESTAMPTZ,
     attempts        INTEGER     NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_error      TEXT
+    last_error      TEXT,
+    correlation_id  TEXT        NOT NULL DEFAULT ''
 );
 CREATE TABLE processed_messages (
     consumer     TEXT        NOT NULL,
@@ -617,5 +619,56 @@ func TestRetentionRemovesOldProcessedMessages(t *testing.T) {
 	}
 	if left != 1 {
 		t.Error("retention removed a record that could still recognise a redelivery")
+	}
+}
+
+// Work that crosses the queue must not lose the request that caused it: the
+// print of an invoice starts in one service and finishes in another, and the
+// two halves are only one story if they share a correlation id.
+func TestCorrelationIdSurvivesTheOutboxAndComesBackOnTheConsumer(t *testing.T) {
+	ctx, pool := newTestPool(t)
+	const requestID = "req-abc-123"
+
+	// A message enqueued while serving a request picks the id up on its own.
+	message, err := messaging.NewMessage("invoice.print_requested", "invoice-1", map[string]int{"n": 1})
+	if err != nil {
+		t.Fatalf("NewMessage() returned error: %v", err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin() returned error: %v", err)
+	}
+	if err := messaging.EnqueueTx(httpx.WithRequestID(ctx, requestID), tx, message); err != nil {
+		t.Fatalf("EnqueueTx() returned error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit() returned error: %v", err)
+	}
+
+	claimed, err := messaging.NewOutbox(pool).Claim(ctx, 10)
+	if err != nil {
+		t.Fatalf("Claim() returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("claimed %d messages, want 1", len(claimed))
+	}
+	if claimed[0].CorrelationID != requestID {
+		t.Errorf("correlation id = %q, want %q", claimed[0].CorrelationID, requestID)
+	}
+
+	// On the other side the consumer puts it back, so whatever the handler
+	// writes is tied to the original request.
+	var seen string
+	consumer := messaging.NewConsumer("test-consumer", pool, discardLogger(),
+		func(ctx context.Context, tx pgx.Tx, message messaging.Message) error {
+			seen = httpx.RequestIDFrom(ctx)
+			return nil
+		})
+	if err := consumer.Handle(ctx, claimed[0]); err != nil {
+		t.Fatalf("Handle() returned error: %v", err)
+	}
+	if seen != requestID {
+		t.Errorf("handler saw correlation id %q, want %q", seen, requestID)
 	}
 }

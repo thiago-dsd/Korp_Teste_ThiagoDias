@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/resilience"
 )
 
@@ -47,6 +48,13 @@ func (c *Consumer) WithRetryPolicy(policy resilience.RetryPolicy) *Consumer {
 // only when the message could not be handled after every attempt, which tells
 // the transport to dead letter it.
 func (c *Consumer) Handle(ctx context.Context, message Message) error {
+	// The work about to happen belongs to the request that published this
+	// event, possibly in another service. Putting the id back into the context
+	// is what makes both halves show up under one search.
+	if message.CorrelationID != "" {
+		ctx = httpx.WithRequestID(ctx, message.CorrelationID)
+	}
+
 	err := resilience.Retry(ctx, c.retry, func(ctx context.Context) error {
 		return c.handleOnce(ctx, message)
 	})

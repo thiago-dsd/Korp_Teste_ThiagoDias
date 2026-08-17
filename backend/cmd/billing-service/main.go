@@ -61,7 +61,7 @@ func run() error {
 		return err
 	}
 
-	logger := logging.New(os.Stdout, cfg.ServiceName, cfg.LogLevel)
+	logger := logging.WithContext(logging.New(os.Stdout, cfg.ServiceName, cfg.LogLevel))
 	slog.SetDefault(logger)
 
 	pool, err := postgres.Connect(ctx, cfg.DatabaseURL, postgres.DefaultPoolOptions())

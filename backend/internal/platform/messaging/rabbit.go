@@ -118,13 +118,14 @@ func (r *Rabbit) Publish(ctx context.Context, message Message) error {
 
 	confirmation, err := channel.PublishWithDeferredConfirmWithContext(ctx, Exchange, message.Type, true, false,
 		amqp.Publishing{
-			MessageId:    message.ID.String(),
-			Type:         message.Type,
-			Timestamp:    message.OccurredAt,
-			ContentType:  "application/json",
-			DeliveryMode: amqp.Persistent,
-			Body:         message.Payload,
-			Headers:      amqp.Table{"aggregate_id": message.AggregateID},
+			MessageId:     message.ID.String(),
+			CorrelationId: message.CorrelationID,
+			Type:          message.Type,
+			Timestamp:     message.OccurredAt,
+			ContentType:   "application/json",
+			DeliveryMode:  amqp.Persistent,
+			Body:          message.Payload,
+			Headers:       amqp.Table{"aggregate_id": message.AggregateID},
 		})
 	if err != nil {
 		r.dropPublisherChannel()
@@ -320,10 +321,11 @@ func toMessage(raw amqp.Delivery) (Message, error) {
 
 	aggregateID, _ := raw.Headers["aggregate_id"].(string)
 	return Message{
-		ID:          id,
-		Type:        messageType,
-		AggregateID: aggregateID,
-		Payload:     raw.Body,
-		OccurredAt:  raw.Timestamp,
+		ID:            id,
+		Type:          messageType,
+		AggregateID:   aggregateID,
+		Payload:       raw.Body,
+		OccurredAt:    raw.Timestamp,
+		CorrelationID: raw.CorrelationId,
 	}, nil
 }

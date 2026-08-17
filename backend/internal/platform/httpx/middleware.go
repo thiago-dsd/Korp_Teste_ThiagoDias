@@ -91,7 +91,6 @@ func Logger(logger *slog.Logger) Middleware {
 				slog.String("path", r.URL.Path),
 				slog.Int("status", recorder.status),
 				slog.Duration("duration", time.Since(started)),
-				slog.String("request_id", RequestIDFrom(r.Context())),
 			)
 		})
 	}
@@ -106,7 +105,6 @@ func Recover(logger *slog.Logger) Middleware {
 					logger.ErrorContext(r.Context(), "recovered from panic",
 						"panic", recovered,
 						"path", r.URL.Path,
-						"request_id", RequestIDFrom(r.Context()),
 					)
 					WriteError(w, r, apperr.Internal("internal_error", "An unexpected error occurred."))
 				}

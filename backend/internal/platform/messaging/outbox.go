@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 )
 
 // claimLease is how long a claimed message stays invisible to other relays.
@@ -41,10 +42,16 @@ func NewOutbox(pool *pgxpool.Pool) *Outbox {
 // only way to enqueue: an event must never be visible without the state change
 // that produced it.
 func EnqueueTx(ctx context.Context, tx pgx.Tx, message Message) error {
+	// The correlation id is read from the context rather than asked for, so no
+	// call site has to remember to pass it along.
+	if message.CorrelationID == "" {
+		message.CorrelationID = httpx.RequestIDFrom(ctx)
+	}
+
 	_, err := tx.Exec(ctx, `
-		INSERT INTO outbox_messages (id, type, aggregate_id, payload, occurred_at)
-		VALUES ($1, $2, $3, $4, $5)`,
-		message.ID, message.Type, message.AggregateID, message.Payload, message.OccurredAt)
+		INSERT INTO outbox_messages (id, type, aggregate_id, payload, occurred_at, correlation_id)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		message.ID, message.Type, message.AggregateID, message.Payload, message.OccurredAt, message.CorrelationID)
 	if err != nil {
 		return fmt.Errorf("enqueue outbox message: %w", err)
 	}
@@ -70,7 +77,7 @@ func (o *Outbox) Claim(ctx context.Context, limit int) ([]Message, error) {
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, type, aggregate_id, payload, occurred_at, attempts, sequence`,
+		RETURNING id, type, aggregate_id, payload, occurred_at, attempts, sequence, correlation_id`,
 		limit, claimLease.String())
 	if err != nil {
 		return nil, fmt.Errorf("claim outbox messages: %w", err)
@@ -86,7 +93,8 @@ func (o *Outbox) Claim(ctx context.Context, limit int) ([]Message, error) {
 	for rows.Next() {
 		var entry claimed
 		if err := rows.Scan(&entry.message.ID, &entry.message.Type, &entry.message.AggregateID,
-			&entry.message.Payload, &entry.message.OccurredAt, &entry.message.Attempts, &entry.sequence); err != nil {
+			&entry.message.Payload, &entry.message.OccurredAt, &entry.message.Attempts, &entry.sequence,
+			&entry.message.CorrelationID); err != nil {
 			return nil, fmt.Errorf("scan outbox message: %w", err)
 		}
 		batch = append(batch, entry)

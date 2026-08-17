@@ -41,7 +41,7 @@ func run() error {
 		return err
 	}
 
-	logger := logging.New(os.Stdout, cfg.ServiceName, cfg.LogLevel)
+	logger := logging.WithContext(logging.New(os.Stdout, cfg.ServiceName, cfg.LogLevel))
 	slog.SetDefault(logger)
 
 	privateKey, generated, err := identity.LoadOrGeneratePrivateKey(os.Getenv("JWT_PRIVATE_KEY"))

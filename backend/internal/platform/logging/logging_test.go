@@ -1,10 +1,14 @@
 package logging
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 )
 
 func TestParseLevel(t *testing.T) {
@@ -50,5 +54,30 @@ func TestNewTagsServiceAndHonoursLevel(t *testing.T) {
 	}
 	if entry["product_code"] != "P-1" {
 		t.Errorf("product_code = %v, want P-1", entry["product_code"])
+	}
+}
+
+// Every line written while serving a request carries the correlation id, so a
+// handler deep in the call stack does not have to remember to pass it.
+func TestWithContextStampsTheCorrelationId(t *testing.T) {
+	var buffer bytes.Buffer
+	logger := WithContext(New(&buffer, "test-service", "info"))
+
+	ctx := httpx.WithRequestID(context.Background(), "req-42")
+	logger.InfoContext(ctx, "something happened")
+
+	if !strings.Contains(buffer.String(), `"request_id":"req-42"`) {
+		t.Errorf("log line does not carry the correlation id: %s", buffer.String())
+	}
+}
+
+func TestWithContextLeavesLinesWithoutARequestAlone(t *testing.T) {
+	var buffer bytes.Buffer
+	logger := WithContext(New(&buffer, "test-service", "info"))
+
+	logger.InfoContext(context.Background(), "started")
+
+	if strings.Contains(buffer.String(), "request_id") {
+		t.Errorf("expected no correlation id outside a request: %s", buffer.String())
 	}
 }
