@@ -152,7 +152,7 @@ func PrintRequestHandler(logger *slog.Logger, failures *FailureSwitch) messaging
 			return fmt.Errorf("commit debit: %w", err)
 		}
 
-		answer, err := buildAnswer(event.InvoiceID, debitErr)
+		answer, err := buildAnswer(event.InvoiceID, event.Attempt, debitErr)
 		if err != nil {
 			return err
 		}
@@ -171,10 +171,12 @@ func PrintRequestHandler(logger *slog.Logger, failures *FailureSwitch) messaging
 	}
 }
 
-func buildAnswer(invoiceID uuid.UUID, debitErr error) (messaging.Message, error) {
+// buildAnswer reports the outcome back to billing, echoing the attempt the
+// request carried so a late answer can be recognised on the other side.
+func buildAnswer(invoiceID uuid.UUID, attempt int, debitErr error) (messaging.Message, error) {
 	if debitErr == nil {
 		return messaging.NewMessage(contracts.StockDebited, invoiceID.String(),
-			contracts.Debited{InvoiceID: invoiceID})
+			contracts.Debited{InvoiceID: invoiceID, Attempt: attempt})
 	}
 
 	appErr := apperr.From(debitErr)
@@ -184,6 +186,7 @@ func buildAnswer(invoiceID uuid.UUID, debitErr error) (messaging.Message, error)
 	case apperr.KindConflict, apperr.KindNotFound, apperr.KindInvalid:
 		return messaging.NewMessage(contracts.StockRejected, invoiceID.String(), contracts.Rejected{
 			InvoiceID: invoiceID,
+			Attempt:   attempt,
 			Code:      appErr.Code,
 			Message:   appErr.Message,
 		})

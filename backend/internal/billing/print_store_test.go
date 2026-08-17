@@ -477,3 +477,239 @@ func TestBulkPrintLeavesNoEventForARefusedInvoice(t *testing.T) {
 		t.Errorf("outbox = %v, want three events and none for the refused invoice", types)
 	}
 }
+
+// A rejection belongs to the attempt that produced it. The broker can hold one
+// back — a stock outage delays the relay — long enough for the reconciler to
+// reopen the invoice and the operator to print it again. When that stale answer
+// finally lands it must not cancel the attempt that is now in flight.
+func TestStaleRejectionDoesNotCancelANewerAttempt(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	// Attempt 1 starts and is abandoned by the reconciler.
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+	if _, err := store.ReopenStalePrintings(ctx, 0, "print_timeout", "No answer in time."); err != nil {
+		t.Fatalf("ReopenStalePrintings() returned error: %v", err)
+	}
+
+	// Attempt 2 starts and is still waiting for the stock service.
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	// The answer to attempt 1 arrives now.
+	if err := applyResult(t, ctx, pool, contracts.StockRejected, contracts.Rejected{
+		InvoiceID: created.ID,
+		Attempt:   1,
+		Code:      "insufficient_balance",
+		Message:   "Product balance is not enough.",
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	invoice, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if invoice.Status != billing.StatusPrinting {
+		t.Errorf("status = %s, want the live attempt to survive as %s", invoice.Status, billing.StatusPrinting)
+	}
+	if invoice.FailureCode != "" {
+		t.Errorf("FailureCode = %q, want no failure while the attempt is still running", invoice.FailureCode)
+	}
+}
+
+// The fence must not swallow the answer that is actually being waited for.
+func TestRejectionOfTheCurrentAttemptReopensTheInvoice(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+	if _, err := store.ReopenStalePrintings(ctx, 0, "print_timeout", "No answer in time."); err != nil {
+		t.Fatalf("ReopenStalePrintings() returned error: %v", err)
+	}
+	printing, err := store.StartPrinting(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	if err := applyResult(t, ctx, pool, contracts.StockRejected, contracts.Rejected{
+		InvoiceID: created.ID,
+		Attempt:   printing.PrintAttempt,
+		Code:      "insufficient_balance",
+		Message:   "Product balance is not enough.",
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	invoice, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if invoice.Status != billing.StatusOpen {
+		t.Errorf("status = %s, want %s", invoice.Status, billing.StatusOpen)
+	}
+	if invoice.FailureCode != "insufficient_balance" {
+		t.Errorf("FailureCode = %q, want the reason of the current attempt", invoice.FailureCode)
+	}
+}
+
+// A confirmation is a fact about the invoice, not about one attempt: the stock
+// service records the debit per invoice, so once the balances are gone the
+// invoice is printed whichever request got the answer through. Ignoring a stale
+// confirmation would leave an invoice open with its stock already taken.
+func TestStaleConfirmationStillClosesTheInvoice(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+	if _, err := store.ReopenStalePrintings(ctx, 0, "print_timeout", "No answer in time."); err != nil {
+		t.Fatalf("ReopenStalePrintings() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	// The answer of attempt 1 lands while attempt 2 is in flight.
+	if err := applyResult(t, ctx, pool, contracts.StockDebited,
+		contracts.Debited{InvoiceID: created.ID, Attempt: 1}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	invoice, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if invoice.Status != billing.StatusClosed {
+		t.Errorf("status = %s, want %s", invoice.Status, billing.StatusClosed)
+	}
+}
+
+// A service still running the previous version answers without an attempt
+// number. Those answers must keep working, or a rolling deploy would leave
+// every invoice waiting for the timeout.
+func TestAnswerWithoutAnAttemptFallsBackToTheStatusCheck(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	if err := applyResult(t, ctx, pool, contracts.StockRejected, contracts.Rejected{
+		InvoiceID: created.ID,
+		Code:      "insufficient_balance",
+		Message:   "Product balance is not enough.",
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	invoice, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if invoice.Status != billing.StatusOpen {
+		t.Errorf("status = %s, want %s", invoice.Status, billing.StatusOpen)
+	}
+}
+
+// The reconciler decides an attempt timed out by comparing printing_since with
+// now() on the database. Stamping it from the application clock made that
+// comparison depend on two clocks agreeing.
+func TestPrintingSinceIsStampedByTheDatabase(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	var inThePast bool
+	if err := pool.QueryRow(ctx, `
+		SELECT printing_since <= now() FROM invoices WHERE id = $1`, created.ID).Scan(&inThePast); err != nil {
+		t.Fatalf("read printing_since: %v", err)
+	}
+	if !inThePast {
+		t.Error("printing_since is in the future for the database, so the reconciler would never reopen the attempt")
+	}
+
+	// Which is what makes the safety net fire reliably.
+	reopened, err := store.ReopenStalePrintings(ctx, 0, "print_timeout", "No answer in time.")
+	if err != nil {
+		t.Fatalf("ReopenStalePrintings() returned error: %v", err)
+	}
+	if reopened != 1 {
+		t.Errorf("reopened %d invoices, want 1", reopened)
+	}
+}
+
+// A consumer that dies before acknowledging gets the same message again when it
+// comes back. The restart must not apply the answer twice, and it must not
+// matter that a different process instance is handling it.
+func TestRedeliveryAfterARestartAppliesTheAnswerOnce(t *testing.T) {
+	ctx, store, pool := newPrintTestStore(t)
+	created, err := store.Create(ctx, sampleItems())
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if _, err := store.StartPrinting(ctx, created.ID); err != nil {
+		t.Fatalf("StartPrinting() returned error: %v", err)
+	}
+
+	answer, err := messaging.NewMessage(contracts.StockRejected, created.ID.String(), contracts.Rejected{
+		InvoiceID: created.ID,
+		Attempt:   1,
+		Code:      "insufficient_balance",
+		Message:   "Product balance is not enough.",
+	})
+	if err != nil {
+		t.Fatalf("NewMessage() returned error: %v", err)
+	}
+
+	// The same message reaches two consumer instances: the one that crashed
+	// after committing, and the one that took over after the restart.
+	for range 2 {
+		consumer := messaging.NewConsumer("billing.stock_results", pool, discardLogger(),
+			billing.StockResultHandler(discardLogger()))
+		if err := consumer.Handle(ctx, answer); err != nil {
+			t.Fatalf("Handle() returned error: %v", err)
+		}
+	}
+
+	invoice, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if invoice.Status != billing.StatusOpen {
+		t.Errorf("status = %s, want %s", invoice.Status, billing.StatusOpen)
+	}
+	if invoice.PrintAttempt != 1 {
+		t.Errorf("PrintAttempt = %d, want the redelivery to change nothing", invoice.PrintAttempt)
+	}
+
+	var applied int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM processed_messages WHERE message_id = $1`, answer.ID).Scan(&applied); err != nil {
+		t.Fatalf("count processed messages: %v", err)
+	}
+	if applied != 1 {
+		t.Errorf("recorded %d applications, want 1", applied)
+	}
+}

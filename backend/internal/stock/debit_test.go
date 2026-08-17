@@ -2,6 +2,7 @@ package stock_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -399,5 +400,59 @@ func TestDebitTxRejectsNonPositiveQuantity(t *testing.T) {
 	}
 	if got := balanceOf(t, ctx, pool, bolt.ID); got != 10 {
 		t.Errorf("balance = %d, want 10 untouched", got)
+	}
+}
+
+// Billing tells the answers of two attempts apart by the attempt number, so it
+// has to survive the round trip. Both outcomes carry it back.
+func TestAnswersEchoTheAttemptOfTheRequest(t *testing.T) {
+	ctx, store, pool := newTestStore(t)
+	bolt := createProduct(t, ctx, store, "P-1", "Steel bolt", 1)
+
+	debited := uuid.New()
+	if err := handlePrintRequest(t, ctx, pool, nil, contracts.PrintRequested{
+		InvoiceID: debited,
+		Attempt:   3,
+		Items:     []contracts.PrintItem{{ProductID: bolt.ID, Quantity: 1}},
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	rejected := uuid.New()
+	if err := handlePrintRequest(t, ctx, pool, nil, contracts.PrintRequested{
+		InvoiceID: rejected,
+		Attempt:   7,
+		Items:     []contracts.PrintItem{{ProductID: bolt.ID, Quantity: 99}},
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	rows, err := pool.Query(ctx, `SELECT type, payload FROM outbox_messages ORDER BY sequence`)
+	if err != nil {
+		t.Fatalf("read outbox: %v", err)
+	}
+	defer rows.Close()
+
+	attempts := map[string]int{}
+	for rows.Next() {
+		var messageType string
+		var payload []byte
+		if err := rows.Scan(&messageType, &payload); err != nil {
+			t.Fatalf("scan outbox message: %v", err)
+		}
+		var answer struct {
+			Attempt int `json:"attempt"`
+		}
+		if err := json.Unmarshal(payload, &answer); err != nil {
+			t.Fatalf("decode answer: %v", err)
+		}
+		attempts[messageType] = answer.Attempt
+	}
+
+	if attempts[contracts.StockDebited] != 3 {
+		t.Errorf("%s carried attempt %d, want 3", contracts.StockDebited, attempts[contracts.StockDebited])
+	}
+	if attempts[contracts.StockRejected] != 7 {
+		t.Errorf("%s carried attempt %d, want 7", contracts.StockRejected, attempts[contracts.StockRejected])
 	}
 }

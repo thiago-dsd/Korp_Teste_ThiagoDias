@@ -173,7 +173,10 @@ identities and reasons rather than whole entities, so a hundred items stay reada
 | Scenario | What happens |
 | --- | --- |
 | Stock service is down | Creating an invoice answers `503 stock_unavailable`; reading invoices keeps working |
-| Broker is down | Print requests stay in the outbox and are published when it returns; services reconnect on their own |
+| Broker is down | Print requests stay in the outbox and are published when it returns, however long it takes; services reconnect on their own |
+| Broker is down for a long time | Nothing is discarded: a message in the outbox is work that was already committed, so it keeps being retried and is reported in the logs once it has been failing long enough to need a person |
+| A late answer arrives after a retry | Each print carries an attempt number. A rejection only applies to the attempt that produced it, so an answer held back by the broker cannot cancel the print that is running now |
+| A late confirmation arrives | It still closes the invoice: the stock records the debit per invoice, so the balances are gone whichever request got the answer through |
 | Not enough balance | Nothing is debited, the invoice returns to `OPEN` with `insufficient_balance` |
 | Stock never answers | The invoice is reopened after two minutes explaining the timeout |
 | Repeated request | An `Idempotency-Key` replays the first answer; a redelivered event never debits twice |

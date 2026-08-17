@@ -1,0 +1,13 @@
+-- Each print of an invoice is a separate attempt, and the answer of the stock
+-- service belongs to the attempt that asked for it.
+--
+-- Without this counter an answer held back by the broker could be applied to a
+-- later attempt: a rejection from a request that already timed out would cancel
+-- the attempt currently in flight and show the operator a reason that is no
+-- longer true. The number travels in the event and is checked when the answer
+-- comes back, so a stale answer can be recognised and ignored.
+--
+-- Existing invoices start at zero and get their first attempt number on the
+-- next print, which is also the value that marks an answer as coming from a
+-- service that does not know about attempts yet.
+ALTER TABLE invoices ADD COLUMN print_attempt INTEGER NOT NULL DEFAULT 0;

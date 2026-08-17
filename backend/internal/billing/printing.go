@@ -57,11 +57,11 @@ func StockResultHandler(logger *slog.Logger) messaging.TxHandler {
 			if err := message.Decode(&event); err != nil {
 				return resilience.Permanent(err)
 			}
-			if err := ReopenTx(ctx, tx, event.InvoiceID, event.Code, event.Message); err != nil {
+			if err := ReopenTx(ctx, tx, event.InvoiceID, event.Attempt, event.Code, event.Message); err != nil {
 				return err
 			}
 			logger.WarnContext(ctx, "invoice reopened after stock rejection",
-				"invoice_id", event.InvoiceID, "reason", event.Code)
+				"invoice_id", event.InvoiceID, "attempt", event.Attempt, "reason", event.Code)
 			return nil
 
 		default:

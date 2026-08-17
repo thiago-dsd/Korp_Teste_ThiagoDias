@@ -16,9 +16,15 @@ import (
 // If the relay crashes mid publish, the message becomes claimable again.
 const claimLease = 30 * time.Second
 
-// maxPublishAttempts bounds how many times a message is retried before it is
-// parked for inspection instead of looping forever.
-const maxPublishAttempts = 10
+// stalledAfterAttempts is when a message stops looking like a passing outage
+// and starts looking like something that needs a person.
+//
+// It only decides what is reported. A message in the outbox is committed work:
+// the state change that produced it is already durable, so the event is not
+// optional and the relay keeps trying for as long as it takes. Giving up would
+// turn at-least-once delivery into maybe-never and leave the two services
+// disagreeing with nothing to detect it.
+const stalledAfterAttempts = 10
 
 // Outbox stores events in the same database as the data that produced them, so
 // writing an entity and announcing it either both happen or neither does.
@@ -60,13 +66,12 @@ func (o *Outbox) Claim(ctx context.Context, limit int) ([]Message, error) {
 			FROM outbox_messages
 			WHERE published_at IS NULL
 			  AND next_attempt_at <= now()
-			  AND attempts < $3
 			ORDER BY sequence
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING id, type, aggregate_id, payload, occurred_at, attempts, sequence`,
-		limit, claimLease.String(), maxPublishAttempts)
+		limit, claimLease.String())
 	if err != nil {
 		return nil, fmt.Errorf("claim outbox messages: %w", err)
 	}
@@ -128,18 +133,19 @@ func (o *Outbox) MarkFailed(ctx context.Context, id uuid.UUID, attempts int, cau
 	return nil
 }
 
-// PendingCount reports how many messages are still waiting, and how many were
-// given up on. Both feed the health endpoint and the logs.
-func (o *Outbox) PendingCount(ctx context.Context) (pending int, exhausted int, err error) {
+// PendingCount reports how many messages are still waiting and how many have
+// been failing long enough to need a person. Nothing is ever given up on, so a
+// stalled message is still being retried while it is reported.
+func (o *Outbox) PendingCount(ctx context.Context) (pending int, stalled int, err error) {
 	err = o.pool.QueryRow(ctx, `
 		SELECT
-			count(*) FILTER (WHERE published_at IS NULL AND attempts < $1),
+			count(*) FILTER (WHERE published_at IS NULL),
 			count(*) FILTER (WHERE published_at IS NULL AND attempts >= $1)
-		FROM outbox_messages`, maxPublishAttempts).Scan(&pending, &exhausted)
+		FROM outbox_messages`, stalledAfterAttempts).Scan(&pending, &stalled)
 	if err != nil {
 		return 0, 0, fmt.Errorf("count outbox messages: %w", err)
 	}
-	return pending, exhausted, nil
+	return pending, stalled, nil
 }
 
 // backoffFor grows the delay with the number of attempts, up to a minute.

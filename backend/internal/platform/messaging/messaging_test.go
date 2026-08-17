@@ -239,30 +239,35 @@ func TestMarkFailedSchedulesARetry(t *testing.T) {
 	}
 }
 
-func TestClaimSkipsExhaustedMessages(t *testing.T) {
+// A message that keeps failing is reported, not dropped. It was committed
+// together with the state change that produced it, so the only correct outcome
+// is that it eventually reaches the broker.
+func TestClaimKeepsRetryingAndReportsStalledMessages(t *testing.T) {
 	ctx, pool := newTestPool(t)
 	outbox := messaging.NewOutbox(pool)
 	message := enqueue(t, ctx, pool, "invoice.print_requested", map[string]int{"n": 1})
 
 	if _, err := pool.Exec(ctx, `
 		UPDATE outbox_messages SET attempts = 10, next_attempt_at = now() WHERE id = $1`, message.ID); err != nil {
-		t.Fatalf("exhaust attempts: %v", err)
+		t.Fatalf("age the message: %v", err)
 	}
 
 	claimed, err := outbox.Claim(ctx, 10)
 	if err != nil {
 		t.Fatalf("Claim() returned error: %v", err)
 	}
-	if len(claimed) != 0 {
-		t.Errorf("claimed %d messages, want 0", len(claimed))
+	if len(claimed) != 1 {
+		t.Errorf("claimed %d messages, want the message to still be retried", len(claimed))
 	}
 
-	pending, exhausted, err := outbox.PendingCount(ctx)
+	pending, stalled, err := outbox.PendingCount(ctx)
 	if err != nil {
 		t.Fatalf("PendingCount() returned error: %v", err)
 	}
-	if pending != 0 || exhausted != 1 {
-		t.Errorf("pending = %d and exhausted = %d, want 0 and 1", pending, exhausted)
+	// It counts as pending because it is still on its way, and as stalled so
+	// somebody learns that the other service is waiting on it.
+	if pending != 1 || stalled != 1 {
+		t.Errorf("pending = %d and stalled = %d, want 1 and 1", pending, stalled)
 	}
 }
 
@@ -502,5 +507,43 @@ func TestConsumersDeduplicateIndependently(t *testing.T) {
 
 	if runs["stock"] != 1 || runs["billing"] != 1 {
 		t.Errorf("runs = %v, want each consumer to handle the message once", runs)
+	}
+}
+
+// A message in the outbox is committed work: the state change that produced it
+// is already durable, so the event is not optional. A broker outage must delay
+// it, never drop it — which is what the relay promises in its own doc comment.
+func TestOutboxKeepsRetryingAfterALongBrokerOutage(t *testing.T) {
+	ctx, pool := newTestPool(t)
+	outbox := messaging.NewOutbox(pool)
+	enqueue(t, ctx, pool, "invoice.print_requested", map[string]string{"invoice_id": "abc"})
+
+	// The broker is unreachable for a long stretch: every round claims the
+	// message, fails to publish it and schedules another try.
+	const rounds = 25
+	for round := 1; round <= rounds; round++ {
+		claimed, err := outbox.Claim(ctx, 10)
+		if err != nil {
+			t.Fatalf("Claim() returned error on round %d: %v", round, err)
+		}
+		if len(claimed) != 1 {
+			t.Fatalf("round %d claimed %d messages, want the message to still be retried", round, len(claimed))
+		}
+		if err := outbox.MarkFailed(ctx, claimed[0].ID, claimed[0].Attempts, errors.New("broker is down")); err != nil {
+			t.Fatalf("MarkFailed() returned error: %v", err)
+		}
+		// The backoff would otherwise hold the message back between rounds.
+		if _, err := pool.Exec(ctx, `UPDATE outbox_messages SET next_attempt_at = now()`); err != nil {
+			t.Fatalf("reset backoff: %v", err)
+		}
+	}
+
+	// The broker comes back.
+	claimed, err := outbox.Claim(ctx, 10)
+	if err != nil {
+		t.Fatalf("Claim() returned error: %v", err)
+	}
+	if len(claimed) != 1 {
+		t.Fatalf("claimed %d messages after the outage, want the message to survive and be delivered", len(claimed))
 	}
 }

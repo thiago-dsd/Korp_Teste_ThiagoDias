@@ -48,16 +48,24 @@ func (s *Store) StartPrinting(ctx context.Context, id uuid.UUID) (Invoice, error
 		return Invoice{}, err
 	}
 
-	if _, err := tx.Exec(ctx, `
+	// The moment the attempt started is stamped by the database, not by this
+	// process. The reconciler decides that an attempt timed out by comparing it
+	// against now() on the same server, and two clocks that disagree would make
+	// it reopen healthy attempts or never notice lost ones.
+	if err := tx.QueryRow(ctx, `
 		UPDATE invoices
-		SET status = $2, printing_since = $3, failure_code = NULL, failure_message = NULL, updated_at = now()
-		WHERE id = $1`, invoice.ID, invoice.Status, invoice.PrintingSince); err != nil {
+		SET status = $2, printing_since = now(), print_attempt = $3,
+		    failure_code = NULL, failure_message = NULL, updated_at = now()
+		WHERE id = $1
+		RETURNING printing_since`,
+		invoice.ID, invoice.Status, invoice.PrintAttempt).Scan(&invoice.PrintingSince); err != nil {
 		return Invoice{}, fmt.Errorf("update invoice status: %w", err)
 	}
 
 	event := contracts.PrintRequested{
 		InvoiceID:     invoice.ID,
 		InvoiceNumber: invoice.Number,
+		Attempt:       invoice.PrintAttempt,
 		Items:         make([]contracts.PrintItem, 0, len(invoice.Items)),
 	}
 	for _, item := range invoice.Items {
@@ -83,6 +91,12 @@ func (s *Store) StartPrinting(ctx context.Context, id uuid.UUID) (Invoice, error
 
 // CloseTx closes a printed invoice inside the caller's transaction, which is
 // the one that also records the message as processed.
+//
+// It deliberately does not check which attempt the confirmation came from. The
+// stock service records a debit per invoice, not per attempt, so once the
+// balances were taken they stay taken and the invoice is printed no matter
+// which request got the answer through. Ignoring a late confirmation would
+// leave an invoice open whose stock is already gone.
 func CloseTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
 	invoice, err := lockInvoice(ctx, tx, id)
 	if err != nil {
@@ -107,7 +121,14 @@ func CloseTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
 
 // ReopenTx returns an invoice to OPEN with the reason of the failure, inside
 // the caller's transaction.
-func ReopenTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, code, message string) error {
+//
+// A rejection is only true of the attempt that produced it, so it is applied
+// only to that attempt. The broker can hold an answer back long enough for the
+// attempt to time out and the operator to print again; applying it then would
+// cancel a request that is still on its way and blame it for a balance that may
+// have been replenished since. Attempt zero comes from a service that does not
+// number attempts yet, and falls back to the status check alone.
+func ReopenTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, attempt int, code, message string) error {
 	invoice, err := lockInvoice(ctx, tx, id)
 	if err != nil {
 		return err
@@ -115,6 +136,10 @@ func ReopenTx(ctx context.Context, tx pgx.Tx, id uuid.UUID, code, message string
 	if invoice.Status != StatusPrinting {
 		// The invoice was already resolved, by the reconciler or by a previous
 		// answer; there is nothing to reopen.
+		return nil
+	}
+	if attempt != 0 && attempt != invoice.PrintAttempt {
+		// The answer belongs to an attempt that was already given up on.
 		return nil
 	}
 	if err := invoice.Reopen(code, message); err != nil {

@@ -49,9 +49,13 @@ type Invoice struct {
 	// PrintingSince is when the current print attempt started, used to detect
 	// attempts that never got an answer.
 	PrintingSince *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
-	PrintedAt     *time.Time
+	// PrintAttempt counts how many times this invoice was sent to print. It is
+	// what tells the answer of the attempt being waited for from the answer of
+	// an attempt that was already given up on.
+	PrintAttempt int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	PrintedAt    *time.Time
 }
 
 // ItemInput is a requested invoice line, before product data is resolved.
@@ -122,6 +126,9 @@ func (i *Invoice) StartPrinting(startedAt time.Time) error {
 	}
 	i.Status = StatusPrinting
 	i.PrintingSince = &startedAt
+	// Every attempt gets its own number, so an answer can be traced back to the
+	// request that caused it.
+	i.PrintAttempt++
 	i.FailureCode = ""
 	i.FailureMessage = ""
 	return nil

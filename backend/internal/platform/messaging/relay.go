@@ -24,13 +24,24 @@ func DefaultRelayOptions() RelayOptions {
 	return RelayOptions{BatchSize: 50, Interval: time.Second}
 }
 
+// stalledReportInterval is how often the relay says out loud that messages are
+// piling up, so the log carries the problem without one line per round.
+const stalledReportInterval = time.Minute
+
 // Relay moves messages from the outbox to the broker. It runs in the service
 // process and keeps trying: a broker outage delays events, it never loses them.
+//
+// "Never loses them" is the whole point of the outbox, so nothing is ever
+// abandoned. What can happen is a message failing for long enough that no
+// outage explains it, and that is reported rather than hidden: the other
+// service is waiting for an event this one already committed to sending.
 type Relay struct {
 	outbox    *Outbox
 	publisher Publisher
 	logger    *slog.Logger
 	options   RelayOptions
+	// lastStalledReport keeps the warning from repeating every round.
+	lastStalledReport time.Time
 }
 
 // NewRelay builds a relay for the given outbox and publisher.
@@ -63,6 +74,7 @@ func (r *Relay) Run(ctx context.Context) error {
 		if err != nil {
 			r.logger.ErrorContext(ctx, "outbox relay round failed", "error", err)
 		}
+		r.reportStalled(ctx)
 
 		// A full batch probably means there is more waiting, so the next round
 		// starts immediately.
@@ -72,6 +84,30 @@ func (r *Relay) Run(ctx context.Context) error {
 		}
 		timer.Reset(wait)
 	}
+}
+
+// reportStalled says out loud that events this service already committed to
+// sending have not reached the broker. They are still being retried; the point
+// is that nobody has to notice by hand that the other service is waiting.
+func (r *Relay) reportStalled(ctx context.Context) {
+	if time.Since(r.lastStalledReport) < stalledReportInterval {
+		return
+	}
+	r.lastStalledReport = time.Now()
+
+	pending, stalled, err := r.outbox.PendingCount(ctx)
+	if err != nil {
+		r.logger.ErrorContext(ctx, "failed to count outbox messages", "error", err)
+		return
+	}
+	if stalled == 0 {
+		return
+	}
+	r.logger.ErrorContext(ctx, "outbox messages are not reaching the broker",
+		"stalled", stalled,
+		"pending", pending,
+		"after_attempts", stalledAfterAttempts,
+	)
 }
 
 // RunOnce claims a batch and publishes it, returning how many messages were

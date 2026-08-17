@@ -24,7 +24,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 const invoiceColumns = `id, number, status, created_at, updated_at, printed_at,
-	failure_code, failure_message, printing_since`
+	failure_code, failure_message, printing_since, print_attempt`
 
 // Create stores an invoice and its items in a single transaction: an invoice
 // never exists without the items it was created with. The number is assigned
@@ -280,6 +280,7 @@ func scanInvoice(row rowScanner) (Invoice, error) {
 		&failureCode,
 		&failureMessage,
 		&invoice.PrintingSince,
+		&invoice.PrintAttempt,
 	)
 	if err != nil {
 		return Invoice{}, err
