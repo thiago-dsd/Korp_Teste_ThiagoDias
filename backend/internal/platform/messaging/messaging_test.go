@@ -547,3 +547,75 @@ func TestOutboxKeepsRetryingAfterALongBrokerOutage(t *testing.T) {
 		t.Fatalf("claimed %d messages after the outage, want the message to survive and be delivered", len(claimed))
 	}
 }
+
+func TestRetentionRemovesPublishedMessagesAndKeepsPendingOnes(t *testing.T) {
+	ctx, pool := newTestPool(t)
+	outbox := messaging.NewOutbox(pool)
+
+	published := enqueue(t, ctx, pool, "invoice.print_requested", map[string]int{"n": 1})
+	pending := enqueue(t, ctx, pool, "invoice.print_requested", map[string]int{"n": 2})
+
+	if err := outbox.MarkPublished(ctx, published.ID); err != nil {
+		t.Fatalf("MarkPublished() returned error: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE outbox_messages SET published_at = now() - interval '30 days' WHERE id = $1`, published.ID); err != nil {
+		t.Fatalf("age the published message: %v", err)
+	}
+
+	removed, err := outbox.DeletePublishedBefore(ctx, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("DeletePublishedBefore() returned error: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed %d messages, want 1", removed)
+	}
+
+	// An event still on its way must survive any cleanup: it is committed work.
+	var left int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_messages WHERE id = $1`, pending.ID).Scan(&left); err != nil {
+		t.Fatalf("count pending: %v", err)
+	}
+	if left != 1 {
+		t.Error("retention removed an event that had not been published yet")
+	}
+}
+
+func TestRetentionRemovesOldProcessedMessages(t *testing.T) {
+	ctx, pool := newTestPool(t)
+
+	old, recent := uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{old, recent} {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("Begin() returned error: %v", err)
+		}
+		if _, err := messaging.MarkProcessedTx(ctx, tx, "consumer", id); err != nil {
+			t.Fatalf("MarkProcessedTx() returned error: %v", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatalf("Commit() returned error: %v", err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE processed_messages SET processed_at = now() - interval '30 days' WHERE message_id = $1`, old); err != nil {
+		t.Fatalf("age the record: %v", err)
+	}
+
+	removed, err := messaging.DeleteProcessedBefore(ctx, pool, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("DeleteProcessedBefore() returned error: %v", err)
+	}
+	if removed != 1 {
+		t.Errorf("removed %d records, want 1", removed)
+	}
+
+	var left int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM processed_messages WHERE message_id = $1`, recent).Scan(&left); err != nil {
+		t.Fatalf("count recent: %v", err)
+	}
+	if left != 1 {
+		t.Error("retention removed a record that could still recognise a redelivery")
+	}
+}

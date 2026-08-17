@@ -166,3 +166,19 @@ func truncateError(err error) string {
 	}
 	return message
 }
+
+// DeletePublishedBefore removes events that already reached the broker.
+//
+// The claim looks for unpublished rows, so every published one it walks past
+// is dead weight. They are kept for a while because they are the record of
+// what this service announced, which is worth having while an incident is
+// still being explained.
+func (o *Outbox) DeletePublishedBefore(ctx context.Context, age time.Duration) (int, error) {
+	tag, err := o.pool.Exec(ctx, `
+		DELETE FROM outbox_messages
+		WHERE published_at IS NOT NULL AND published_at < now() - $1::interval`, age.String())
+	if err != nil {
+		return 0, fmt.Errorf("delete published outbox messages: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}

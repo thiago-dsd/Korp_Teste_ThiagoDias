@@ -3,9 +3,11 @@ package messaging
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // MarkProcessedTx records that a consumer handled a message, inside the same
@@ -21,4 +23,19 @@ func MarkProcessedTx(ctx context.Context, tx pgx.Tx, consumer string, messageID 
 		return false, fmt.Errorf("record processed message: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// DeleteProcessedBefore removes the record of messages consumed long ago.
+//
+// The record exists to recognise a redelivery. The broker gives up redelivering
+// long before this window closes, so an older row can no longer prevent
+// anything — it only makes the deduplication insert slower.
+func DeleteProcessedBefore(ctx context.Context, pool *pgxpool.Pool, age time.Duration) (int, error) {
+	tag, err := pool.Exec(ctx, `
+		DELETE FROM processed_messages
+		WHERE processed_at < now() - $1::interval`, age.String())
+	if err != nil {
+		return 0, fmt.Errorf("delete processed messages: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
 }

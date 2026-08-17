@@ -38,10 +38,25 @@ type Config struct {
 	LogLevel string
 	// RateLimits bounds how fast each category of operation may be called.
 	RateLimits RateLimits
+	// Retention bounds how long the tables that only grow keep their rows.
+	Retention Retention
 	// LoginMaxFailures and LoginLockout close an account under attack. They
 	// are counted in the database, so every instance sees the same number.
 	LoginMaxFailures int
 	LoginLockout     time.Duration
+}
+
+// Retention says how long rows that have done their job are kept. The windows
+// are generous on purpose: they exist to stop unbounded growth, not to save
+// space, and a row that is still around is one an incident can be explained
+// with.
+type Retention struct {
+	// Interval is how often the cleanup runs.
+	Interval time.Duration
+	// Idempotency is how long a replayable answer is kept.
+	Idempotency time.Duration
+	// Messaging is how long published events and consumed message ids are kept.
+	Messaging time.Duration
 }
 
 // RateLimits holds one policy per category of operation. They are separate
@@ -136,6 +151,10 @@ func Load(serviceName string, lookup Loader) (Config, error) {
 	cfg.RateLimits = limits
 	problems = append(problems, limitProblems...)
 
+	retention, retentionProblems := loadRetention(lookup)
+	cfg.Retention = retention
+	problems = append(problems, retentionProblems...)
+
 	failures, err := intVar(lookup, "LOGIN_MAX_FAILURES", 10)
 	if err != nil {
 		problems = append(problems, err.Error())
@@ -202,6 +221,25 @@ func loadRateLimits(lookup Loader) (RateLimits, []string) {
 		AI:     parse("RATE_LIMIT_AI", "RATE_LIMIT_AI", defaultRateLimits.AI),
 		Bulk:   parse("RATE_LIMIT_BULK", "RATE_LIMIT_BULK", defaultRateLimits.Bulk),
 		Public: parse("RATE_LIMIT_PUBLIC", "RATE_LIMIT_PUBLIC", defaultRateLimits.Public),
+	}, problems
+}
+
+// loadRetention reads the cleanup windows.
+func loadRetention(lookup Loader) (Retention, []string) {
+	var problems []string
+
+	read := func(key string, fallback time.Duration) time.Duration {
+		value, err := durationVar(lookup, key, fallback)
+		if err != nil {
+			problems = append(problems, err.Error())
+		}
+		return value
+	}
+
+	return Retention{
+		Interval:    read("RETENTION_INTERVAL", time.Hour),
+		Idempotency: read("IDEMPOTENCY_RETENTION", 24*time.Hour),
+		Messaging:   read("MESSAGING_RETENTION", 7*24*time.Hour),
 	}, problems
 }
 

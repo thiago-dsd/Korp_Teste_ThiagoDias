@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/thiagodias/korp-invoices/internal/config"
 	"github.com/thiagodias/korp-invoices/internal/identity"
@@ -21,6 +20,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/logging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
+	"github.com/thiagodias/korp-invoices/internal/platform/retention"
 )
 
 const serviceName = "identity-service"
@@ -97,7 +97,14 @@ func run() error {
 	})
 
 	// Sessions that expired long ago are of no use to anyone.
-	go cleanUpExpiredTokens(ctx, store, logger)
+	// Sessions expire on their own; the rows do not. Same runner as the other
+	// services, so there is one place where retention is configured.
+	go retention.NewRunner(cfg.Retention.Interval, logger,
+		retention.Task{
+			Name: "refresh_tokens",
+			Run:  func(ctx context.Context) (int, error) { return store.DeleteExpiredTokens(ctx) },
+		},
+	).Run(ctx)
 
 	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout)
 	middlewares = append(middlewares, publicLimit)
@@ -118,25 +125,4 @@ func publicKeysOf(issuer *identity.TokenIssuer, public *rsa.PublicKey) map[strin
 		keys[entry["kid"]] = public
 	}
 	return keys
-}
-
-func cleanUpExpiredTokens(ctx context.Context, store *identity.Store, logger *slog.Logger) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			removed, err := store.DeleteExpiredTokens(ctx)
-			if err != nil {
-				logger.ErrorContext(ctx, "failed to clean up expired refresh tokens", "error", err)
-				continue
-			}
-			if removed > 0 {
-				logger.InfoContext(ctx, "cleaned up expired refresh tokens", "count", removed)
-			}
-		}
-	}
 }

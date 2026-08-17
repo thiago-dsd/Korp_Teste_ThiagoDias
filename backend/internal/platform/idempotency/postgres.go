@@ -119,3 +119,20 @@ func (s *PostgresStore) Release(ctx context.Context, endpoint, key string) error
 	}
 	return nil
 }
+
+// DeleteCompletedBefore removes replayable answers older than age.
+//
+// A key is kept so a retry of the same request replays the original answer.
+// Once no client could reasonably still be retrying, the row is only cost: the
+// table is on the write path of every endpoint that accepts a key.
+// Reservations that never completed are left alone; those are released by the
+// middleware or taken over when they go stale.
+func (s *PostgresStore) DeleteCompletedBefore(ctx context.Context, age time.Duration) (int, error) {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM idempotency_keys
+		WHERE completed_at IS NOT NULL AND completed_at < now() - $1::interval`, age.String())
+	if err != nil {
+		return 0, fmt.Errorf("delete completed idempotency keys: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}

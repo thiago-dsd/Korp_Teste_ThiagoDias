@@ -20,6 +20,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/messaging"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
+	"github.com/thiagodias/korp-invoices/internal/platform/retention"
 	"github.com/thiagodias/korp-invoices/internal/stock"
 )
 
@@ -117,7 +118,33 @@ func run() error {
 	}()
 
 	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout)
-	middlewares = append(middlewares, publicLimit, idempotency.Middleware(idempotency.NewPostgresStore(pool), logger))
+	idempotencyStore := idempotency.NewPostgresStore(pool)
+
+	// The tables that make retries and redeliveries safe are also the ones that
+	// only ever grow; cleaning them is what keeps that safety cheap.
+	retentionRunner := retention.NewRunner(cfg.Retention.Interval, logger,
+		retention.Task{
+			Name: "idempotency_keys",
+			Run: func(ctx context.Context) (int, error) {
+				return idempotencyStore.DeleteCompletedBefore(ctx, cfg.Retention.Idempotency)
+			},
+		},
+		retention.Task{
+			Name: "outbox_messages",
+			Run: func(ctx context.Context) (int, error) {
+				return outbox.DeletePublishedBefore(ctx, cfg.Retention.Messaging)
+			},
+		},
+		retention.Task{
+			Name: "processed_messages",
+			Run: func(ctx context.Context) (int, error) {
+				return messaging.DeleteProcessedBefore(ctx, pool, cfg.Retention.Messaging)
+			},
+		},
+	)
+	go retentionRunner.Run(ctx)
+
+	middlewares = append(middlewares, publicLimit, idempotency.Middleware(idempotencyStore, logger))
 
 	handler := httpx.Chain(mux, middlewares...)
 
