@@ -37,6 +37,15 @@ GET  /auth/me, DELETE /auth/me     ->  profile and account deletion (password co
 GET  /.well-known/jwks.json        ->  public key the other services verify tokens with
 ```
 
+Two roles decide what an account may do. An **operator** reads the catalogue and issues and
+prints invoices, which is the daily work. An **administrator** also changes the catalogue and the
+balances — the operations that rewrite what invoices are made of. The role travels inside the
+signed token, so each service enforces it without asking identity on every request, and a refusal
+answers `403` rather than `401`: signing in again fixes one and cannot fix the other.
+
+The first account created administers the system, because one where nobody can manage the
+catalogue could never be set up in the first place.
+
 Passwords are stored as argon2id hashes. Refresh tokens are stored hashed and rotated on every
 use: replaying one that was already exchanged revokes the whole session, which is what limits the
 damage when a token leaks. Deleting an account removes its sessions with it.
