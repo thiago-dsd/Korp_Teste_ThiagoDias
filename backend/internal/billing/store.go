@@ -24,12 +24,13 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 const invoiceColumns = `id, number, status, created_at, updated_at, printed_at,
-	failure_code, failure_message, printing_since, print_attempt`
+	failure_code, failure_message, printing_since, print_attempt,
+	created_by_id, created_by_email, printed_by_id, printed_by_email`
 
 // Create stores an invoice and its items in a single transaction: an invoice
 // never exists without the items it was created with. The number is assigned
 // by a database sequence, so concurrent creations never share one.
-func (s *Store) Create(ctx context.Context, items []Item) (Invoice, error) {
+func (s *Store) Create(ctx context.Context, items []Item, issuedBy Author) (Invoice, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Invoice{}, fmt.Errorf("begin invoice transaction: %w", err)
@@ -37,8 +38,9 @@ func (s *Store) Create(ctx context.Context, items []Item) (Invoice, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	invoice, err := scanInvoice(tx.QueryRow(ctx, `
-		INSERT INTO invoices DEFAULT VALUES
-		RETURNING `+invoiceColumns))
+		INSERT INTO invoices (created_by_id, created_by_email)
+		VALUES ($1, $2)
+		RETURNING `+invoiceColumns, nullableAuthorID(issuedBy), nullableAuthorEmail(issuedBy)))
 	if err != nil {
 		return Invoice{}, fmt.Errorf("insert invoice: %w", err)
 	}
@@ -288,6 +290,8 @@ type rowScanner interface {
 func scanInvoice(row rowScanner) (Invoice, error) {
 	var invoice Invoice
 	var failureCode, failureMessage *string
+	var createdByID, printedByID *uuid.UUID
+	var createdByEmail, printedByEmail *string
 
 	err := row.Scan(
 		&invoice.ID,
@@ -300,6 +304,10 @@ func scanInvoice(row rowScanner) (Invoice, error) {
 		&failureMessage,
 		&invoice.PrintingSince,
 		&invoice.PrintAttempt,
+		&createdByID,
+		&createdByEmail,
+		&printedByID,
+		&printedByEmail,
 	)
 	if err != nil {
 		return Invoice{}, err
@@ -309,6 +317,18 @@ func scanInvoice(row rowScanner) (Invoice, error) {
 	}
 	if failureMessage != nil {
 		invoice.FailureMessage = *failureMessage
+	}
+	if createdByID != nil {
+		invoice.IssuedBy = Author{ID: *createdByID}
+	}
+	if createdByEmail != nil {
+		invoice.IssuedBy.Email = *createdByEmail
+	}
+	if printedByID != nil {
+		invoice.PrintedBy = Author{ID: *printedByID}
+	}
+	if printedByEmail != nil {
+		invoice.PrintedBy.Email = *printedByEmail
 	}
 	invoice.Items = make([]Item, 0)
 	return invoice, nil
@@ -322,4 +342,20 @@ func invoiceIDs(id uuid.UUID, count int) []uuid.UUID {
 		ids[index] = id
 	}
 	return ids
+}
+
+// nullableAuthorID stores SQL NULL when the author is unknown, which is what an
+// invoice created before authorship was recorded looks like.
+func nullableAuthorID(author Author) any {
+	if author.ID == uuid.Nil {
+		return nil
+	}
+	return author.ID
+}
+
+func nullableAuthorEmail(author Author) any {
+	if author.Email == "" {
+		return nil
+	}
+	return author.Email
 }

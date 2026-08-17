@@ -49,11 +49,11 @@ func sampleItems() []billing.Item {
 func TestStoreCreateStartsOpenWithSequentialNumbers(t *testing.T) {
 	ctx, store := newTestStore(t)
 
-	first, err := store.Create(ctx, sampleItems())
+	first, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
-	second, err := store.Create(ctx, sampleItems())
+	second, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestStoreCreatePersistsItems(t *testing.T) {
 	ctx, store := newTestStore(t)
 	items := sampleItems()
 
-	created, err := store.Create(ctx, items)
+	created, err := store.Create(ctx, items, billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestStoreCreateRejectsInvalidItemsWithoutLeavingAnInvoice(t *testing.T) {
 
 	_, err := store.Create(ctx, []billing.Item{
 		{ProductID: uuid.New(), ProductCode: "P-1", ProductDescription: "Steel bolt", Quantity: 0},
-	})
+	}, billing.Author{})
 	if err == nil {
 		t.Fatal("Create() returned no error for a zero quantity, want one")
 	}
@@ -136,11 +136,11 @@ func TestStoreGetByIDReportsMissingInvoice(t *testing.T) {
 
 func TestStoreListOrdersByNewestNumberAndLoadsItems(t *testing.T) {
 	ctx, store := newTestStore(t)
-	first, err := store.Create(ctx, sampleItems())
+	first, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
-	second, err := store.Create(ctx, sampleItems())
+	second, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestStoreListOrdersByNewestNumberAndLoadsItems(t *testing.T) {
 
 func TestStoreListFiltersByStatus(t *testing.T) {
 	ctx, store := newTestStore(t)
-	if _, err := store.Create(ctx, sampleItems()); err != nil {
+	if _, err := store.Create(ctx, sampleItems(), billing.Author{}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestStoreCreateAssignsUniqueNumbersConcurrently(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			invoice, err := store.Create(ctx, sampleItems())
+			invoice, err := store.Create(ctx, sampleItems(), billing.Author{})
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -243,7 +243,7 @@ func TestStoreCreateAssignsUniqueNumbersConcurrently(t *testing.T) {
 func TestStoreListPagesFromTheNewestInvoice(t *testing.T) {
 	ctx, store := newTestStore(t)
 	for range 5 {
-		if _, err := store.Create(ctx, sampleItems()); err != nil {
+		if _, err := store.Create(ctx, sampleItems(), billing.Author{}); err != nil {
 			t.Fatalf("Create() returned error: %v", err)
 		}
 	}
@@ -290,7 +290,7 @@ func TestStoreListPagesFromTheNewestInvoice(t *testing.T) {
 func TestStoreListIsStableWhenInvoicesAreIssuedWhilePaging(t *testing.T) {
 	ctx, store := newTestStore(t)
 	for range 3 {
-		if _, err := store.Create(ctx, sampleItems()); err != nil {
+		if _, err := store.Create(ctx, sampleItems(), billing.Author{}); err != nil {
 			t.Fatalf("Create() returned error: %v", err)
 		}
 	}
@@ -299,7 +299,7 @@ func TestStoreListIsStableWhenInvoicesAreIssuedWhilePaging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() returned error: %v", err)
 	}
-	if _, err := store.Create(ctx, sampleItems()); err != nil {
+	if _, err := store.Create(ctx, sampleItems(), billing.Author{}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func createInvoiceWith(t *testing.T, ctx context.Context, store *billing.Store, 
 
 	invoice, err := store.Create(ctx, []billing.Item{
 		{ProductID: uuid.New(), ProductCode: code, ProductDescription: "Product " + code, Quantity: quantity},
-	})
+	}, billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestStoreListFindsTheInvoicesThatUsedAProduct(t *testing.T) {
 		Quantity:           2,
 	}
 
-	withProduct, err := store.Create(ctx, []billing.Item{wanted})
+	withProduct, err := store.Create(ctx, []billing.Item{wanted}, billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestStoreListDoesNotRepeatInvoicesWithSeveralItems(t *testing.T) {
 	if _, err := store.Create(ctx, []billing.Item{
 		{ProductID: first, ProductCode: "P-1", ProductDescription: "One", Quantity: 1},
 		{ProductID: second, ProductCode: "P-2", ProductDescription: "Two", Quantity: 1},
-	}); err != nil {
+	}, billing.Author{}); err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
@@ -611,4 +611,45 @@ func explain(t *testing.T, ctx context.Context, pool *pgxpool.Pool, statement st
 		plan.WriteString("\n")
 	}
 	return plan.String()
+}
+
+// An invoice is a fiscal document, so who issued it is stored with it. The
+// email is a snapshot: deleting the account later must not erase who signed a
+// document that was already issued.
+func TestInvoiceRecordsWhoIssuedIt(t *testing.T) {
+	ctx, store := newTestStore(t)
+	author := billing.Author{ID: uuid.New(), Email: "ada@example.com"}
+
+	created, err := store.Create(ctx, sampleItems(), author)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if created.IssuedBy != author {
+		t.Errorf("IssuedBy = %+v, want %+v", created.IssuedBy, author)
+	}
+
+	stored, err := store.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned error: %v", err)
+	}
+	if stored.IssuedBy != author {
+		t.Errorf("stored IssuedBy = %+v, want %+v", stored.IssuedBy, author)
+	}
+	if stored.PrintedBy.Recorded() {
+		t.Error("PrintedBy is set on an invoice nobody printed yet")
+	}
+}
+
+// Invoices issued before authorship existed simply have no author, and must
+// keep working.
+func TestInvoiceWithoutAnAuthorIsStillUsable(t *testing.T) {
+	ctx, store := newTestStore(t)
+
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+	if created.IssuedBy.Recorded() {
+		t.Error("an author was invented for a request that had none")
+	}
 }

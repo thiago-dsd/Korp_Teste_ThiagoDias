@@ -102,6 +102,12 @@ type draftItemResponse struct {
 	Balance            int       `json:"balance"`
 }
 
+// authorResponse is who did something, when it is known.
+type authorResponse struct {
+	ID    string `json:"id"`
+	Email string `json:"email,omitempty"`
+}
+
 type assistantStatusResponse struct {
 	Available bool `json:"available"`
 }
@@ -166,6 +172,10 @@ type invoiceResponse struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	PrintedAt *time.Time      `json:"printed_at"`
+	// IssuedBy and PrintedBy are who did it, when it is known. Invoices issued
+	// before authorship was recorded have neither.
+	IssuedBy  *authorResponse `json:"issued_by,omitempty"`
+	PrintedBy *authorResponse `json:"printed_by,omitempty"`
 }
 
 type invoiceFailure struct {
@@ -271,6 +281,15 @@ func invoiceID(r *http.Request) (uuid.UUID, error) {
 	return id, nil
 }
 
+// toAuthorResponse omits an author that was never recorded, so an invoice
+// issued before this existed simply has no field.
+func toAuthorResponse(author Author) *authorResponse {
+	if !author.Recorded() {
+		return nil
+	}
+	return &authorResponse{ID: author.ID.String(), Email: author.Email}
+}
+
 func toInvoiceResponse(invoice Invoice) invoiceResponse {
 	items := make([]invoiceItemResponse, 0, len(invoice.Items))
 	for _, item := range invoice.Items {
@@ -287,7 +306,7 @@ func toInvoiceResponse(invoice Invoice) invoiceResponse {
 		failure = &invoiceFailure{Code: invoice.FailureCode, Message: invoice.FailureMessage}
 	}
 
-	return invoiceResponse{
+	response := invoiceResponse{
 		ID:        invoice.ID,
 		Number:    invoice.Number,
 		Status:    invoice.Status,
@@ -296,5 +315,8 @@ func toInvoiceResponse(invoice Invoice) invoiceResponse {
 		CreatedAt: invoice.CreatedAt,
 		UpdatedAt: invoice.UpdatedAt,
 		PrintedAt: invoice.PrintedAt,
+		IssuedBy:  toAuthorResponse(invoice.IssuedBy),
+		PrintedBy: toAuthorResponse(invoice.PrintedBy),
 	}
+	return response
 }

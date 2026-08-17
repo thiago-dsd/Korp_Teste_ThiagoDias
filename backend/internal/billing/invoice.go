@@ -49,6 +49,10 @@ type Invoice struct {
 	// PrintingSince is when the current print attempt started, used to detect
 	// attempts that never got an answer.
 	PrintingSince *time.Time
+	// IssuedBy and PrintedBy are who did it. They are a snapshot: deleting an
+	// account must not erase who signed a document that was already issued.
+	IssuedBy  Author
+	PrintedBy Author
 	// PrintAttempt counts how many times this invoice was sent to print. It is
 	// what tells the answer of the attempt being waited for from the answer of
 	// an attempt that was already given up on.
@@ -57,6 +61,15 @@ type Invoice struct {
 	UpdatedAt    time.Time
 	PrintedAt    *time.Time
 }
+
+// Author is the person who performed an action on an invoice.
+type Author struct {
+	ID    uuid.UUID
+	Email string
+}
+
+// Recorded reports whether an author is known.
+func (a Author) Recorded() bool { return a.ID != uuid.Nil }
 
 // ItemInput is a requested invoice line, before product data is resolved.
 type ItemInput struct {

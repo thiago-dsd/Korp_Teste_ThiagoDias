@@ -52,13 +52,18 @@ func (s *Store) StartPrinting(ctx context.Context, id uuid.UUID) (Invoice, error
 	// process. The reconciler decides that an attempt timed out by comparing it
 	// against now() on the same server, and two clocks that disagree would make
 	// it reopen healthy attempts or never notice lost ones.
+	// Who asked for the print is recorded with the attempt that asked.
+	printedBy := authorFrom(ctx)
 	if err := tx.QueryRow(ctx, `
 		UPDATE invoices
 		SET status = $2, printing_since = now(), print_attempt = $3,
+		    printed_by_id = COALESCE($4, printed_by_id),
+		    printed_by_email = COALESCE($5, printed_by_email),
 		    failure_code = NULL, failure_message = NULL, updated_at = now()
 		WHERE id = $1
 		RETURNING printing_since`,
-		invoice.ID, invoice.Status, invoice.PrintAttempt).Scan(&invoice.PrintingSince); err != nil {
+		invoice.ID, invoice.Status, invoice.PrintAttempt,
+		nullableAuthorID(printedBy), nullableAuthorEmail(printedBy)).Scan(&invoice.PrintingSince); err != nil {
 		return Invoice{}, fmt.Errorf("update invoice status: %w", err)
 	}
 
@@ -85,6 +90,9 @@ func (s *Store) StartPrinting(ctx context.Context, id uuid.UUID) (Invoice, error
 
 	if err := tx.Commit(ctx); err != nil {
 		return Invoice{}, fmt.Errorf("commit print request: %w", err)
+	}
+	if printedBy.Recorded() {
+		invoice.PrintedBy = printedBy
 	}
 	return invoice, nil
 }

@@ -45,7 +45,7 @@ func outboxTypes(t *testing.T, ctx context.Context, pool *pgxpool.Pool) []string
 
 func TestStartPrintingMovesToPrintingAndEnqueuesTheRequest(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestStartPrintingMovesToPrintingAndEnqueuesTheRequest(t *testing.T) {
 
 func TestStartPrintingRejectsInvoicesThatAreNotOpen(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestStartPrintingReportsMissingInvoice(t *testing.T) {
 // request: the row lock lets exactly one attempt through.
 func TestConcurrentPrintRequestsOnTheSameInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -192,7 +192,7 @@ func applyResult(t *testing.T, ctx context.Context, pool *pgxpool.Pool, messageT
 
 func TestStockDebitedClosesTheInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestStockDebitedClosesTheInvoice(t *testing.T) {
 
 func TestStockRejectedReopensTheInvoiceWithTheReason(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestStockRejectedReopensTheInvoiceWithTheReason(t *testing.T) {
 
 func TestStockResultsAreIdempotent(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestStockResultsAreIdempotent(t *testing.T) {
 // reopen a closed invoice.
 func TestLateRejectionDoesNotReopenAClosedInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestLateRejectionDoesNotReopenAClosedInvoice(t *testing.T) {
 // still close it: the stock was debited.
 func TestLateConfirmationClosesAnInvoiceReopenedByTimeout(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestLateConfirmationClosesAnInvoiceReopenedByTimeout(t *testing.T) {
 
 func TestReopenStalePrintingsLeavesFreshAttemptsAlone(t *testing.T) {
 	ctx, store, _ := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestBulkPrintWritesOneEventPerInvoice(t *testing.T) {
 
 	ids := make([]uuid.UUID, 0, 3)
 	for range 3 {
-		invoice, err := store.Create(ctx, sampleItems())
+		invoice, err := store.Create(ctx, sampleItems(), billing.Author{})
 		if err != nil {
 			t.Fatalf("Create() returned error: %v", err)
 		}
@@ -443,15 +443,15 @@ func TestBulkPrintLeavesNoEventForARefusedInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
 	service := billing.NewService(store, nil, store)
 
-	first, err := store.Create(ctx, sampleItems())
+	first, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
-	closed, err := store.Create(ctx, sampleItems())
+	closed, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
-	last, err := store.Create(ctx, sampleItems())
+	last, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestBulkPrintLeavesNoEventForARefusedInvoice(t *testing.T) {
 // finally lands it must not cancel the attempt that is now in flight.
 func TestStaleRejectionDoesNotCancelANewerAttempt(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestStaleRejectionDoesNotCancelANewerAttempt(t *testing.T) {
 // The fence must not swallow the answer that is actually being waited for.
 func TestRejectionOfTheCurrentAttemptReopensTheInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -569,7 +569,7 @@ func TestRejectionOfTheCurrentAttemptReopensTheInvoice(t *testing.T) {
 // confirmation would leave an invoice open with its stock already taken.
 func TestStaleConfirmationStillClosesTheInvoice(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -603,7 +603,7 @@ func TestStaleConfirmationStillClosesTheInvoice(t *testing.T) {
 // every invoice waiting for the timeout.
 func TestAnswerWithoutAnAttemptFallsBackToTheStatusCheck(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -633,7 +633,7 @@ func TestAnswerWithoutAnAttemptFallsBackToTheStatusCheck(t *testing.T) {
 // comparison depend on two clocks agreeing.
 func TestPrintingSinceIsStampedByTheDatabase(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}
@@ -665,7 +665,7 @@ func TestPrintingSinceIsStampedByTheDatabase(t *testing.T) {
 // matter that a different process instance is handling it.
 func TestRedeliveryAfterARestartAppliesTheAnswerOnce(t *testing.T) {
 	ctx, store, pool := newPrintTestStore(t)
-	created, err := store.Create(ctx, sampleItems())
+	created, err := store.Create(ctx, sampleItems(), billing.Author{})
 	if err != nil {
 		t.Fatalf("Create() returned error: %v", err)
 	}

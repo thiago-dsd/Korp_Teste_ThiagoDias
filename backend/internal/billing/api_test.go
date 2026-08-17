@@ -58,7 +58,7 @@ func newMemoryInvoices() *memoryInvoices {
 	return &memoryInvoices{invoices: map[uuid.UUID]billing.Invoice{}}
 }
 
-func (r *memoryInvoices) Create(ctx context.Context, items []billing.Item) (billing.Invoice, error) {
+func (r *memoryInvoices) Create(ctx context.Context, items []billing.Item, issuedBy billing.Author) (billing.Invoice, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -74,6 +74,7 @@ func (r *memoryInvoices) Create(ctx context.Context, items []billing.Item) (bill
 		Number:    r.sequence,
 		Status:    billing.StatusOpen,
 		Items:     items,
+		IssuedBy:  issuedBy,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
