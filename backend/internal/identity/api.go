@@ -86,9 +86,11 @@ type sessionResponse struct {
 }
 
 type userResponse struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
+	ID    uuid.UUID `json:"id"`
+	Email string    `json:"email"`
+	Name  string    `json:"name"`
+	// Role lets the screens stop offering what the service would refuse.
+	Role      Role      `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -209,7 +211,7 @@ func toSessionResponse(user User, tokens TokenPair) sessionResponse {
 }
 
 func toUserResponse(user User) userResponse {
-	return userResponse{ID: user.ID, Email: user.Email, Name: user.Name, CreatedAt: user.CreatedAt}
+	return userResponse{ID: user.ID, Email: user.Email, Name: user.Name, Role: user.Role, CreatedAt: user.CreatedAt}
 }
 
 // userAgentOf keeps a short note of the client that started the session, which

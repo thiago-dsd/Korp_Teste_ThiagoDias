@@ -687,3 +687,53 @@ func TestProductEndpointsRefuseAMalformedAuthorizationHeader(t *testing.T) {
 		}
 	}
 }
+
+// Reading the catalogue is part of issuing an invoice, so anybody signed in may
+// do it. Changing it rewrites what invoices are made of, so it is kept to
+// administrators.
+func TestOperatorsCanReadTheCatalogueButNotChangeIt(t *testing.T) {
+	_, handler := newTestAPI(t)
+	operator := signer.TokenForRole(t, "operator")
+
+	read := httptest.NewRequest(http.MethodGet, "/products", nil)
+	read.Header.Set("Authorization", "Bearer "+operator)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, read)
+	if recorder.Code != http.StatusOK {
+		t.Errorf("reading the catalogue as an operator answered %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	refused := map[string]*http.Request{
+		"create":  httptest.NewRequest(http.MethodPost, "/products", strings.NewReader(`{"code":"P-9","description":"Bolt","balance":1}`)),
+		"bulk":    httptest.NewRequest(http.MethodPost, "/products/bulk", strings.NewReader(`{"items":[]}`)),
+		"adjust":  httptest.NewRequest(http.MethodPost, "/products/adjustments", strings.NewReader(`{"items":[]}`)),
+		"replace": httptest.NewRequest(http.MethodPut, "/products/"+uuid.NewString(), strings.NewReader(`{"description":"x","balance":1,"version":1}`)),
+	}
+	for name, request := range refused {
+		request.Header.Set("Authorization", "Bearer "+operator)
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		// Forbidden, not unauthorized: signing in again would not help.
+		if recorder.Code != http.StatusForbidden {
+			t.Errorf("%s as an operator answered %d, want %d", name, recorder.Code, http.StatusForbidden)
+		}
+	}
+}
+
+func TestAdministratorsCanChangeTheCatalogue(t *testing.T) {
+	_, handler := newTestAPI(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/products",
+		strings.NewReader(`{"code":"P-ADMIN","description":"Bolt","balance":1}`))
+	request.Header.Set("Authorization", "Bearer "+signer.TokenForRole(t, "admin"))
+	request.Header.Set("Content-Type", "application/json")
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusCreated {
+		t.Errorf("status = %d, want %d (%s)", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+}

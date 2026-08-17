@@ -24,13 +24,15 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-const userColumns = `id, email, name, password_hash, created_at, updated_at`
+const userColumns = `id, email, name, role, password_hash, created_at, updated_at`
 
 // CreateUser stores a new account, reporting a repeated address as ErrEmailTaken.
 func (s *Store) CreateUser(ctx context.Context, registration Registration, passwordHash string) (User, error) {
+	// The first account created administers the system: one where nobody can
+	// manage the catalogue could never be set up in the first place.
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO users (email, name, password_hash)
-		VALUES ($1, $2, $3)
+		INSERT INTO users (email, name, password_hash, role)
+		VALUES ($1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'operator' ELSE 'admin' END)
 		RETURNING `+userColumns,
 		registration.Email, registration.Name, passwordHash)
 
@@ -241,7 +243,7 @@ type rowScanner interface {
 
 func scanUser(row rowScanner) (User, error) {
 	var user User
-	err := row.Scan(&user.ID, &user.Email, &user.Name, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
+	err := row.Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.PasswordHash, &user.CreatedAt, &user.UpdatedAt)
 	return user, err
 }
 

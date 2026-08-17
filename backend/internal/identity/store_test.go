@@ -541,3 +541,19 @@ func TestReplayAfterTheGraceWindowStillRevokesTheFamily(t *testing.T) {
 		t.Error("the family survived a detected replay, want every token revoked")
 	}
 }
+
+// A system where nobody can manage the catalogue cannot be set up at all, so
+// the first account created administers it and everybody after is an operator.
+func TestFirstAccountBecomesTheAdministrator(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+
+	first, _ := register(t, ctx, service, "first@example.com")
+	if first.Role != identity.RoleAdmin {
+		t.Errorf("first account role = %q, want %q", first.Role, identity.RoleAdmin)
+	}
+
+	second, _ := register(t, ctx, service, "second@example.com")
+	if second.Role != identity.RoleOperator {
+		t.Errorf("second account role = %q, want %q", second.Role, identity.RoleOperator)
+	}
+}

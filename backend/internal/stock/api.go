@@ -40,16 +40,22 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits
 	read := ratelimit.Middleware(limits.Limiter, limits.Read, ratelimit.ByUser)
 	write := ratelimit.Middleware(limits.Limiter, limits.Write, ratelimit.ByUser)
 
-	mux.Handle("POST /products", guard(write(http.HandlerFunc(a.createProduct))))
+	// Reading the catalogue is part of issuing an invoice, so everybody signed
+	// in may do it. Changing it rewrites what invoices are made of — a balance
+	// corrected here changes what the next print may take — so it is kept to
+	// administrators.
+	admin := authn.RequireRole(authn.RoleAdmin)
+
+	mux.Handle("POST /products", guard(admin(write(http.HandlerFunc(a.createProduct)))))
 	mux.Handle("GET /products", guard(read(http.HandlerFunc(a.listProducts))))
 	mux.Handle("GET /products/{id}", guard(read(http.HandlerFunc(a.getProduct))))
-	mux.Handle("PUT /products/{id}", guard(write(http.HandlerFunc(a.updateProduct))))
+	mux.Handle("PUT /products/{id}", guard(admin(write(http.HandlerFunc(a.updateProduct)))))
 
 	// One bulk call does the work of up to a hundred, so it has its own
 	// allowance instead of spending the ordinary write budget.
 	batch := ratelimit.Middleware(limits.Limiter, limits.Bulk, ratelimit.ByUser)
-	mux.Handle("POST /products/bulk", guard(batch(http.HandlerFunc(a.createProducts))))
-	mux.Handle("POST /products/adjustments", guard(batch(http.HandlerFunc(a.adjustBalances))))
+	mux.Handle("POST /products/bulk", guard(admin(batch(http.HandlerFunc(a.createProducts)))))
+	mux.Handle("POST /products/adjustments", guard(admin(batch(http.HandlerFunc(a.adjustBalances)))))
 }
 
 type bulkProductsRequest struct {

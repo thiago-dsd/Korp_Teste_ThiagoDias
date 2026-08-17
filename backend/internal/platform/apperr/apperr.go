@@ -21,6 +21,10 @@ const (
 	KindConflict Kind = "conflict"
 	// KindUnauthorized means the caller is not allowed to perform the action.
 	KindUnauthorized Kind = "unauthorized"
+	// KindForbidden means the caller is known but not allowed to do this.
+	// It is distinct from unauthorized on purpose: signing in again fixes one
+	// and cannot fix the other.
+	KindForbidden Kind = "forbidden"
 	// KindTooManyRequests means the caller is going faster than allowed.
 	KindTooManyRequests Kind = "too_many_requests"
 	// KindUnavailable means a dependency failed and the call may be retried.
@@ -89,6 +93,11 @@ func Conflict(code, message string) *Error { return New(KindConflict, code, mess
 
 // Unauthorized builds an access denied error.
 func Unauthorized(code, message string) *Error { return New(KindUnauthorized, code, message) }
+
+// Forbidden builds an error for a caller who is known but not allowed. It is
+// distinct from unauthorized on purpose: signing in again fixes one and cannot
+// fix the other.
+func Forbidden(code, message string) *Error { return New(KindForbidden, code, message) }
 
 // Unavailable builds a dependency failure error.
 func Unavailable(code, message string) *Error { return New(KindUnavailable, code, message) }

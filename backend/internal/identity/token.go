@@ -50,6 +50,9 @@ type Claims struct {
 	jwt.RegisteredClaims
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	// Role travels in the token so the other services can enforce it without
+	// asking identity on every request, and without reaching into its database.
+	Role string `json:"role"`
 }
 
 // TokenIssuer signs access tokens and publishes the key that verifies them.
@@ -120,6 +123,7 @@ func (i *TokenIssuer) IssueAccessToken(user User) (string, time.Duration, error)
 		},
 		Email: user.Email,
 		Name:  user.Name,
+		Role:  string(user.Role),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

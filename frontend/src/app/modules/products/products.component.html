@@ -6,13 +6,15 @@
         What is available in stock. Balances go down when an invoice is printed.
       </p>
     </div>
-    <button
-      type="button"
-      (click)="openCreateForm()"
-      class="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold">
-      <svg-icon src="assets/icons/heroicons/outline/cube.svg" [svgClass]="'h-4 w-4'"></svg-icon>
-      New product
-    </button>
+    @if (canManageCatalogue()) {
+      <button
+        type="button"
+        (click)="openCreateForm()"
+        class="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold">
+        <svg-icon src="assets/icons/heroicons/outline/cube.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+        New product
+      </button>
+    }
   </div>
 
   <div class="flex flex-wrap items-center gap-3">
@@ -107,13 +109,15 @@
           @for (product of items(); track product.id) {
             <tr [class]="isSelected(product.id) ? 'bg-primary/5' : 'hover:bg-card/60'">
               <td class="px-4 py-3">
-                <input
-                  type="checkbox"
-                  class="accent-primary h-4 w-4"
-                  [checked]="isSelected(product.id)"
-                  [disabled]="selectionFull() && !isSelected(product.id)"
-                  (change)="toggleSelection(product.id)"
-                  [attr.aria-label]="'Select product ' + product.code + ' for a stock adjustment'" />
+                @if (canManageCatalogue()) {
+                  <input
+                    type="checkbox"
+                    class="accent-primary h-4 w-4"
+                    [checked]="isSelected(product.id)"
+                    [disabled]="selectionFull() && !isSelected(product.id)"
+                    (change)="toggleSelection(product.id)"
+                    [attr.aria-label]="'Select product ' + product.code + ' for a stock adjustment'" />
+                }
               </td>
               <td class="text-foreground px-4 py-3 font-medium">{{ product.code }}</td>
               <td class="text-muted-foreground px-4 py-3">{{ product.description }}</td>
@@ -125,13 +129,15 @@
                 </span>
               </td>
               <td class="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  (click)="openEditForm(product)"
-                  class="text-primary text-xs font-semibold"
-                  [attr.aria-label]="'Edit product ' + product.code">
-                  Edit
-                </button>
+                @if (canManageCatalogue()) {
+                  <button
+                    type="button"
+                    (click)="openEditForm(product)"
+                    class="text-primary text-xs font-semibold"
+                    [attr.aria-label]="'Edit product ' + product.code">
+                    Edit
+                  </button>
+                }
               </td>
             </tr>
           }

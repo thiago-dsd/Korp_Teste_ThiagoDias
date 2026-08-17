@@ -25,9 +25,31 @@ type User struct {
 	ID           uuid.UUID
 	Email        string
 	Name         string
+	Role         Role
 	PasswordHash string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+// Role is what a person is allowed to do.
+type Role string
+
+const (
+	// RoleOperator issues and prints invoices, which is the daily work.
+	RoleOperator Role = "operator"
+	// RoleAdmin also changes the catalogue and the balances — the operations
+	// that rewrite what invoices are made of.
+	RoleAdmin Role = "admin"
+)
+
+// ValidRole reports whether value is a known role.
+func ValidRole(value string) bool {
+	switch Role(value) {
+	case RoleOperator, RoleAdmin:
+		return true
+	default:
+		return false
+	}
 }
 
 // Registration is validated account data, ready to be stored.

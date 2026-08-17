@@ -11,7 +11,13 @@ const authUrl = `${environment.identityApiUrl}/auth`;
 
 function sessionPayload(accessToken = 'access-1', refreshToken = 'refresh-1') {
   return {
-    user: { id: 'u-1', email: 'ada@example.com', name: 'Ada Lovelace', created_at: '2026-01-01T00:00:00Z' },
+    user: {
+      id: 'u-1',
+      email: 'ada@example.com',
+      name: 'Ada Lovelace',
+      role: 'admin',
+      created_at: '2026-01-01T00:00:00Z',
+    },
     access_token: accessToken,
     refresh_token: refreshToken,
     token_type: 'Bearer',
@@ -179,5 +185,24 @@ describe('AuthService', () => {
 
     expect(restored).toBeNull();
     expect(service.isAuthenticated()).toBe(false);
+  });
+
+  it('should tell an administrator from an operator', () => {
+    service.login('ada@example.com', 'secret').subscribe();
+    http.expectOne(`${authUrl}/login`).flush(sessionPayload());
+
+    expect(service.isAdmin()).toBe(true);
+  });
+
+  // A token issued before roles existed reports none. Treating that as the
+  // lesser role keeps the screens from offering what the service would refuse.
+  it('should treat a session without a role as an operator', () => {
+    service.login('ada@example.com', 'secret').subscribe();
+    const withoutRole = sessionPayload();
+    delete (withoutRole.user as { role?: string }).role;
+    http.expectOne(`${authUrl}/login`).flush(withoutRole);
+
+    expect(service.isAdmin()).toBe(false);
+    expect(service.currentUser()?.role).toBe('operator');
   });
 });

@@ -31,8 +31,15 @@ const (
 	Audience = "korp-invoices"
 )
 
-// jwksTTL is how long a fetched key set is trusted before being read again.
-const jwksTTL = 10 * time.Minute
+// jwksRefetchCooldown bounds how often an unknown key id may cause the key set
+// to be read again.
+//
+// Refusing an unknown key without asking would mean a rotated signing key is
+// not honoured until the whole set expires, and every session issued with the
+// new key fails in the meantime. Asking every time would let anyone with a made
+// up key id turn this service into a load generator against identity. Asking at
+// most this often does neither.
+const jwksRefetchCooldown = 30 * time.Second
 
 // Errors reported to callers.
 var (
@@ -47,7 +54,20 @@ type User struct {
 	ID    uuid.UUID
 	Email string
 	Name  string
+	// Role is what this person may do. It comes from the signed token, so a
+	// caller cannot claim one.
+	Role string
 }
+
+// Roles understood across the services.
+const (
+	RoleOperator = "operator"
+	RoleAdmin    = "admin"
+)
+
+// ErrForbidden reports a caller who is authenticated but not allowed.
+var ErrForbidden = apperr.Forbidden("forbidden",
+	"Your account is not allowed to perform this operation.")
 
 type contextKey string
 
@@ -115,26 +135,35 @@ func (v *Verifier) Verify(ctx context.Context, rawToken string) (User, error) {
 	var extra struct {
 		Email string `json:"email"`
 		Name  string `json:"name"`
+		Role  string `json:"role"`
 	}
 	if payload, err := decodePayload(rawToken); err == nil {
 		_ = json.Unmarshal(payload, &extra)
 	}
 
-	return User{ID: id, Email: extra.Email, Name: extra.Name}, nil
+	role := extra.Role
+	if role == "" {
+		// A token issued before roles existed belongs to somebody who could
+		// already do everything; treating it as the lesser role is what keeps a
+		// rolling deploy from handing out privileges nobody granted.
+		role = RoleOperator
+	}
+	return User{ID: id, Email: extra.Email, Name: extra.Name, Role: role}, nil
 }
 
 func (v *Verifier) keyFor(ctx context.Context, keyID string) (*rsa.PublicKey, error) {
 	v.mu.RLock()
 	key, found := v.keys[keyID]
-	fresh := v.now().Sub(v.fetchedAt) < jwksTTL
+	recentlyAsked := v.now().Sub(v.fetchedAt) < jwksRefetchCooldown
 	v.mu.RUnlock()
 
 	if found {
 		return key, nil
 	}
-	if fresh && len(v.keys) > 0 {
-		// The key set was read recently and does not know this key, so the
-		// token was not signed by the identity service we trust.
+	if recentlyAsked && len(v.keys) > 0 {
+		// The key set was read moments ago and still does not know this key, so
+		// asking again now would only be work. A key rotated since then is
+		// picked up as soon as the cooldown passes.
 		return nil, fmt.Errorf("unknown signing key %q", keyID)
 	}
 	if v.jwksURL == "" {
@@ -285,4 +314,32 @@ func bearerToken(r *http.Request) (string, bool) {
 	}
 	token := strings.TrimSpace(header[len(prefix):])
 	return token, token != ""
+}
+
+// RequireRole refuses a caller whose role is not among the allowed ones.
+//
+// It sits inside RequireUser, so by the time it runs the identity is proven and
+// the role comes from the signed token rather than from anything the caller
+// sent. Enforcing it here rather than asking the identity service keeps the
+// services independent: the token carries everything needed to decide.
+func RequireRole(roles ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]bool, len(roles))
+	for _, role := range roles {
+		allowed[role] = true
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, err := UserFrom(r.Context())
+			if err != nil {
+				httpx.WriteError(w, r, err)
+				return
+			}
+			if !allowed[user.Role] {
+				httpx.WriteError(w, r, ErrForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

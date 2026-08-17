@@ -8,6 +8,7 @@ import { Subject, catchError, debounceTime, distinctUntilChanged, of, startWith,
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { BULK_MAX_ITEMS, BulkResponse } from 'src/app/core/models/bulk.model';
 import { NewProduct, Product } from 'src/app/core/models/product.model';
+import { AuthService } from 'src/app/core/services/auth.service';
 import { ProductFilters, ProductService, StockAdjustment } from 'src/app/core/services/product.service';
 import { BulkResultComponent } from 'src/app/shared/components/bulk-result/bulk-result.component';
 import { ProductFormComponent } from './product-form.component';
@@ -26,6 +27,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 })
 export class ProductsComponent implements OnInit {
   private readonly products = inject(ProductService);
+  private readonly auth = inject(AuthService);
+
+  /** Managing the catalogue is kept to administrators by the service. */
+  readonly canManageCatalogue = this.auth.isAdmin;
   private readonly destroyRef = inject(DestroyRef);
 
   readonly searchControl = new FormControl('', { nonNullable: true });

@@ -37,14 +37,27 @@ func New(t *testing.T) *Signer {
 	}
 }
 
-// Token signs an access token for a random user.
+// Token signs an access token for a random administrator, which is what most
+// handler tests need: they are exercising the handler, not the authorisation.
 func (s *Signer) Token(t *testing.T) string {
 	t.Helper()
-	return s.TokenFor(t, uuid.New(), "operator@example.com")
+	return s.TokenFor(t, uuid.New(), "admin@example.com")
 }
 
-// TokenFor signs an access token for the given user.
+// TokenForRole signs a token for a random user with the given role, for the
+// tests that are about what a role may and may not do.
+func (s *Signer) TokenForRole(t *testing.T, role string) string {
+	t.Helper()
+	return s.token(t, uuid.New(), "someone@example.com", role)
+}
+
+// TokenFor signs an access token for the given user, as an administrator.
 func (s *Signer) TokenFor(t *testing.T, userID uuid.UUID, email string) string {
+	t.Helper()
+	return s.token(t, userID, email, authn.RoleAdmin)
+}
+
+func (s *Signer) token(t *testing.T, userID uuid.UUID, email, role string) string {
 	t.Helper()
 
 	now := time.Now()
@@ -55,7 +68,8 @@ func (s *Signer) TokenFor(t *testing.T, userID uuid.UUID, email string) string {
 		"iat":   now.Unix(),
 		"exp":   now.Add(15 * time.Minute).Unix(),
 		"email": email,
-		"name":  "Test Operator",
+		"name":  "Test User",
+		"role":  role,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)

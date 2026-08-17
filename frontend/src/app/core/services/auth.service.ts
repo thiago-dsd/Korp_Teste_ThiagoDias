@@ -4,13 +4,13 @@ import { Observable, catchError, finalize, map, of, shareReplay, tap, throwError
 
 import { environment } from 'src/environments/environment';
 import { ApiError } from '../models/api-error.model';
-import { AuthUser } from '../models/auth.model';
+import { UserRole, AuthUser } from '../models/auth.model';
 
 /** Where the refresh token is kept between reloads. */
 const REFRESH_TOKEN_KEY = 'invoice-system.refresh-token';
 
 interface SessionPayload {
-  user: { id: string; email: string; name: string; created_at: string };
+  user: { id: string; email: string; name: string; role: UserRole; created_at: string };
   access_token: string;
   refresh_token: string;
   token_type: string;
@@ -41,6 +41,13 @@ export class AuthService {
   readonly currentUser = this.session.asReadonly();
   readonly accessToken = this.token.asReadonly();
   readonly isAuthenticated = computed(() => this.session() !== null);
+
+  /**
+   * Whether the person may change the catalogue and the balances. The service
+   * enforces this regardless; the screens use it to avoid offering an action
+   * that would only come back as a refusal.
+   */
+  readonly isAdmin = computed(() => this.session()?.role === 'admin');
 
   /** True when a session may be restored from a stored refresh token. */
   hasStoredSession(): boolean {
@@ -167,5 +174,13 @@ export class AuthService {
 }
 
 function toUser(payload: SessionPayload['user']): AuthUser {
-  return { id: payload.id, email: payload.email, name: payload.name, createdAt: payload.created_at };
+  // A token issued before roles existed reports none; treating that as the
+  // lesser role keeps the screens from offering what would be refused.
+  return {
+    id: payload.id,
+    email: payload.email,
+    name: payload.name,
+    role: payload.role ?? 'operator',
+    createdAt: payload.created_at,
+  };
 }
