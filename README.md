@@ -232,6 +232,18 @@ cd frontend && npm install && npm start   # Angular app on :4200
 
 Services apply their own database migrations at startup.
 
+To run everything in containers instead, without a Go toolchain on the machine:
+
+```bash
+make services-up      # builds the three images and starts them with the infrastructure
+```
+
+The services build from one multi-stage `backend/Dockerfile` parameterised by which command to
+compile, and run as a non-root user from a ~30 MB image with nothing in it but the static binary
+and the certificates needed to reach the AI endpoint. The Angular app still runs with `npm start`,
+because its API URLs are baked in at build time and pointing them at containers is a deployment
+decision rather than a development one.
+
 ## Tests
 
 ```bash

@@ -14,6 +14,14 @@ infra-up: ## Start PostgreSQL and RabbitMQ
 	docker compose up -d
 
 .PHONY: infra-down
+services-up: ## Build and run the whole system in containers
+	docker compose --profile services up -d --build
+
+.PHONY: services-down
+services-down: ## Stop the containerised services (keeps the infrastructure)
+	docker compose --profile services stop identity-service stock-service billing-service
+
+.PHONY: infra-down
 infra-down: ## Stop the infrastructure (keeps data)
 	docker compose down
 
