@@ -1,0 +1,110 @@
+name: CI
+
+# The suite is the strongest thing this project has, and until now nothing ran
+# it except somebody remembering to. Integration tests skip silently without a
+# database, so the containers below are what makes this a real check rather
+# than a green tick over the unit tests.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: korp
+          POSTGRES_PASSWORD: korp
+          POSTGRES_DB: korp
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U korp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: korp
+          RABBITMQ_DEFAULT_PASS: korp
+        ports: ['5672:5672']
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Create the databases the tests expect
+        env:
+          PGPASSWORD: korp
+        run: |
+          for db in stock billing identity stock_test billing_test identity_test messaging_test; do
+            psql -h localhost -U korp -d korp -c "CREATE DATABASE $db" || true
+          done
+
+      - name: Formatting
+        working-directory: backend
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: Vet
+        working-directory: backend
+        run: go vet ./...
+
+      # The race detector is here because the fakes behind the handler tests
+      # once had no lock, which made the concurrency tests prove nothing.
+      - name: Tests with the race detector, against real PostgreSQL and RabbitMQ
+        working-directory: backend
+        env:
+          TEST_DATABASE_URL: postgres://korp:korp@localhost:5432/stock_test?sslmode=disable
+          STOCK_TEST_DATABASE_URL: postgres://korp:korp@localhost:5432/stock_test?sslmode=disable
+          BILLING_TEST_DATABASE_URL: postgres://korp:korp@localhost:5432/billing_test?sslmode=disable
+          IDENTITY_TEST_DATABASE_URL: postgres://korp:korp@localhost:5432/identity_test?sslmode=disable
+          MESSAGING_TEST_DATABASE_URL: postgres://korp:korp@localhost:5432/messaging_test?sslmode=disable
+          RABBITMQ_TEST_URL: amqp://korp:korp@localhost:5672/
+        run: go test -race ./... -count=1
+
+      - name: Build every service
+        working-directory: backend
+        run: go build ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Formatting
+        working-directory: frontend
+        run: npm run prettier:verify
+
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
