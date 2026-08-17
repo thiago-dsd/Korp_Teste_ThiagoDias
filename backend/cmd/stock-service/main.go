@@ -18,6 +18,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/idempotency"
 	"github.com/thiagodias/korp-invoices/internal/platform/logging"
 	"github.com/thiagodias/korp-invoices/internal/platform/messaging"
+	"github.com/thiagodias/korp-invoices/internal/platform/metrics"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 	"github.com/thiagodias/korp-invoices/internal/platform/retention"
@@ -103,6 +104,23 @@ func run() error {
 	})
 	api.InternalRoutes(mux, cfg.ServiceToken)
 
+	// The numbers worth being woken up for: how much this service is answering
+	// and how much work is stuck on its way out or already given up on.
+	registry := metrics.NewRegistry(cfg.ServiceName)
+	registry.AddGauge("outbox_pending_messages", "Events not yet published.", func() (float64, error) {
+		pending, _, err := outbox.PendingCount(ctx)
+		return float64(pending), err
+	})
+	registry.AddGauge("outbox_stalled_messages", "Events failing long enough to need a person.", func() (float64, error) {
+		_, stalled, err := outbox.PendingCount(ctx)
+		return float64(stalled), err
+	})
+	registry.AddGauge("dead_letter_messages", "Messages this service gave up on.", func() (float64, error) {
+		depth, err := rabbit.QueueDepth(messaging.DeadLetterQueue(contracts.StockPrintRequestsQueue))
+		return float64(depth), err
+	})
+	registry.Routes(mux, cfg.ServiceToken)
+
 	// What the consumer gave up on is visible and can be sent back once the
 	// reason it failed is fixed.
 	messaging.NewDeadLetterAPI(rabbit, logger, contracts.StockPrintRequestsQueue).Routes(mux, cfg.ServiceToken)
@@ -148,7 +166,7 @@ func run() error {
 	)
 	go retentionRunner.Run(ctx)
 
-	middlewares = append(middlewares, publicLimit, idempotency.Middleware(idempotencyStore, logger))
+	middlewares = append(middlewares, registry.Middleware(), publicLimit, idempotency.Middleware(idempotencyStore, logger))
 
 	handler := httpx.Chain(mux, middlewares...)
 

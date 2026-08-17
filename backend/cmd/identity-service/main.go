@@ -18,6 +18,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/health"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
 	"github.com/thiagodias/korp-invoices/internal/platform/logging"
+	"github.com/thiagodias/korp-invoices/internal/platform/metrics"
 	"github.com/thiagodias/korp-invoices/internal/platform/postgres"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 	"github.com/thiagodias/korp-invoices/internal/platform/retention"
@@ -106,8 +107,12 @@ func run() error {
 		},
 	).Run(ctx)
 
+	// Identity publishes no events, so its metrics are traffic and runtime only.
+	registry := metrics.NewRegistry(cfg.ServiceName)
+	registry.Routes(mux, cfg.ServiceToken)
+
 	middlewares := httpx.BaseMiddlewares(logger, cfg.AllowedOrigins, cfg.RequestTimeout)
-	middlewares = append(middlewares, publicLimit)
+	middlewares = append(middlewares, registry.Middleware(), publicLimit)
 	handler := httpx.Chain(mux, middlewares...)
 
 	return httpx.Serve(ctx, httpx.ServerConfig{

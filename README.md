@@ -184,6 +184,10 @@ identities and reasons rather than whole entities, so a hundred items stay reada
 | Refresh token replayed | The session is revoked on the spot and both the attacker and the client have to sign in again |
 | Assistant unavailable or answering nonsense | The answer is discarded and the invoice is written by hand |
 
+Each service reports what it is doing on `GET /internal/metrics`, in the format Prometheus
+scrapes: traffic by method and status, how many events are waiting in the outbox, how many have
+been failing long enough to need a person, and how many messages were dead lettered.
+
 When a message is given up on it lands in a dead letter queue, which is visible and replayable
 without opening the broker UI:
 
