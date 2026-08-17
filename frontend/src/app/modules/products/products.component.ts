@@ -208,7 +208,14 @@ export class ProductsComponent implements OnInit {
     this.saveFailure.set(null);
 
     const request = editing
-      ? this.products.update(editing.id, { description: input.description, balance: input.balance })
+      ? this.products.update(editing.id, {
+          description: input.description,
+          balance: input.balance,
+          // The version the form was opened with: if an invoice debited this
+          // product in the meantime, the service refuses the write instead of
+          // putting the sold stock back.
+          version: editing.version,
+        })
       : this.products.create(input);
 
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({

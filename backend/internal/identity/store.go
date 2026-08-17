@@ -136,6 +136,20 @@ func (s *Store) RotateRefreshToken(ctx context.Context, presentedHash, newHash s
 	}
 
 	if stored.UsedAt != nil {
+		// Two tabs of the same browser share one refresh token and refresh the
+		// moment the access token expires, so the loser of that race presents a
+		// token that was exchanged a fraction of a second ago. That is not an
+		// attack, and ending the session over it signs an honest person out.
+		//
+		// Inside the window the answer is a plain invalid token: the client
+		// reads the token the winner stored and carries on. Outside it, a token
+		// that resurfaces long after being spent is treated as stolen.
+		if stored.RevokedAt == nil && time.Since(*stored.UsedAt) <= ReuseGracePeriod {
+			return User{}, uuid.Nil, ErrInvalidToken.WithDetails(map[string]string{
+				"reason": "token_already_rotated",
+			})
+		}
+
 		// The token was already exchanged: either it leaked or a client is
 		// replaying it. Ending the whole family is the safe answer.
 		if err := revokeFamily(ctx, tx, stored.FamilyID); err != nil {

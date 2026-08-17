@@ -20,6 +20,15 @@ import (
 const (
 	AccessTokenTTL  = 15 * time.Minute
 	RefreshTokenTTL = 7 * 24 * time.Hour
+	// ReuseGracePeriod is how long after a refresh token is exchanged that
+	// presenting it again still counts as a race rather than as a replay.
+	//
+	// It exists because two tabs of one browser share a token and refresh at
+	// the same instant; without it the loser of that race would end the
+	// session of somebody who did nothing wrong. The window is deliberately
+	// short: it is the one moment an attacker could replay a stolen token
+	// unnoticed, and that is the price of not signing honest people out.
+	ReuseGracePeriod = 15 * time.Second
 )
 
 // Issuer is the value of the `iss` claim, and Audience the `aud` claim the

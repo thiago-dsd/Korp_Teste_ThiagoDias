@@ -77,7 +77,7 @@ func DebitTx(ctx context.Context, tx pgx.Tx, invoiceID uuid.UUID, items []DebitI
 		// negative, no matter how many invoices try at the same time.
 		tag, err := tx.Exec(ctx, `
 			UPDATE products
-			SET balance = balance - $2, updated_at = now()
+			SET balance = balance - $2, version = version + 1, updated_at = now()
 			WHERE id = $1 AND balance >= $2`, item.ProductID, item.Quantity)
 		if err != nil {
 			return fmt.Errorf("debit product balance: %w", err)

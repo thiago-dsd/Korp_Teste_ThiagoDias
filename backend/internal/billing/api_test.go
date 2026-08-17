@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -40,7 +41,12 @@ func testLimits() billing.Limits {
 }
 
 // memoryInvoices is an in-memory InvoiceRepository for handler tests.
+// memoryInvoices is guarded by a mutex because the handler tests drive it
+// from several goroutines at once. Without it the tests that claim to prove
+// something about concurrency would only be proving that the map got lucky.
 type memoryInvoices struct {
+	mu sync.Mutex
+
 	invoices map[uuid.UUID]billing.Invoice
 	sequence int64
 	failWith error
@@ -53,6 +59,9 @@ func newMemoryInvoices() *memoryInvoices {
 }
 
 func (r *memoryInvoices) Create(ctx context.Context, items []billing.Item) (billing.Invoice, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return billing.Invoice{}, r.failWith
 	}
@@ -73,6 +82,9 @@ func (r *memoryInvoices) Create(ctx context.Context, items []billing.Item) (bill
 }
 
 func (r *memoryInvoices) GetByID(ctx context.Context, id uuid.UUID) (billing.Invoice, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return billing.Invoice{}, r.failWith
 	}
@@ -86,6 +98,9 @@ func (r *memoryInvoices) GetByID(ctx context.Context, id uuid.UUID) (billing.Inv
 // StartPrinting mirrors what the store does: the invoice moves to PRINTING and
 // the print request is recorded, both or neither.
 func (r *memoryInvoices) StartPrinting(ctx context.Context, id uuid.UUID) (billing.Invoice, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return billing.Invoice{}, r.failWith
 	}
@@ -102,6 +117,9 @@ func (r *memoryInvoices) StartPrinting(ctx context.Context, id uuid.UUID) (billi
 }
 
 func (r *memoryInvoices) ReopenStalePrintings(ctx context.Context, timeout time.Duration, code, message string) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return 0, r.failWith
 	}
@@ -123,6 +141,9 @@ func (r *memoryInvoices) ReopenStalePrintings(ctx context.Context, timeout time.
 }
 
 func (r *memoryInvoices) List(ctx context.Context, query billing.Query) (billing.Page, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return billing.Page{}, r.failWith
 	}

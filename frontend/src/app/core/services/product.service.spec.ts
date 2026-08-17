@@ -105,11 +105,13 @@ describe('ProductService', () => {
   });
 
   it('should update a product', () => {
-    service.update('p-1', { description: 'Stainless bolt', balance: 42 }).subscribe();
+    service.update('p-1', { description: 'Stainless bolt', balance: 42, version: 3 }).subscribe();
 
     const request = http.expectOne(`${baseUrl}/p-1`);
     expect(request.request.method).toBe('PUT');
-    expect(request.request.body).toEqual({ description: 'Stainless bolt', balance: 42 });
+    // The version the caller read travels with the write, which is what makes
+    // a concurrent debit visible instead of silently overwritten.
+    expect(request.request.body).toEqual({ description: 'Stainless bolt', balance: 42, version: 3 });
     request.flush({
       id: 'p-1',
       code: 'P-1',

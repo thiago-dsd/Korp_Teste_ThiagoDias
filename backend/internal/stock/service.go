@@ -38,7 +38,19 @@ func (s *Service) CreateProduct(ctx context.Context, code, description string, b
 }
 
 // UpdateProduct changes the description and the balance of a product.
-func (s *Service) UpdateProduct(ctx context.Context, id uuid.UUID, description string, balance int) (Product, error) {
+// UpdateProduct writes the description and the balance of a product.
+//
+// The version the caller read travels with the request: the write only lands
+// if the product still looks that way. Without it an edit sent from a screen
+// opened minutes ago would overwrite everything that happened since, including
+// the balance an invoice debited on its way to being printed.
+func (s *Service) UpdateProduct(ctx context.Context, id uuid.UUID, description string, balance, version int) (Product, error) {
+	if version <= 0 {
+		return Product{}, ErrInvalidProduct.WithDetails(map[string]string{
+			"version": "must be the version of the product being edited",
+		})
+	}
+
 	product, err := s.products.GetByID(ctx, id)
 	if err != nil {
 		return Product{}, err
@@ -46,6 +58,7 @@ func (s *Service) UpdateProduct(ctx context.Context, id uuid.UUID, description s
 	if err := product.Update(description, balance); err != nil {
 		return Product{}, err
 	}
+	product.Version = version
 	return s.products.Update(ctx, product)
 }
 

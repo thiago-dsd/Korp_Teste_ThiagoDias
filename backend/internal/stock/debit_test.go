@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -454,5 +455,93 @@ func TestAnswersEchoTheAttemptOfTheRequest(t *testing.T) {
 	}
 	if attempts[contracts.StockRejected] != 7 {
 		t.Errorf("%s carried attempt %d, want 7", contracts.StockRejected, attempts[contracts.StockRejected])
+	}
+}
+
+// Editing a product writes the balance the form was filled with. If an invoice
+// is printed while that form is open, saving it puts the sold stock back: the
+// careful "balance = balance - quantity" of the debit is undone by a plain
+// write of a value that was already stale when the operator read it.
+func TestEditingAProductDoesNotResurrectDebitedStock(t *testing.T) {
+	ctx, store, pool := newTestStore(t)
+	bolt := createProduct(t, ctx, store, "P-1", "Steel bolt", 10)
+	service := stock.NewService(store)
+
+	// The operator opens the edit form and reads balance 10.
+	opened, err := service.GetProduct(ctx, bolt.ID)
+	if err != nil {
+		t.Fatalf("GetProduct() returned error: %v", err)
+	}
+
+	// An invoice is printed while the form is open.
+	if err := handlePrintRequest(t, ctx, pool, nil, contracts.PrintRequested{
+		InvoiceID: uuid.New(),
+		Attempt:   1,
+		Items:     []contracts.PrintItem{{ProductID: bolt.ID, Quantity: 4}},
+	}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if got := balanceOf(t, ctx, pool, bolt.ID); got != 6 {
+		t.Fatalf("balance after the debit = %d, want 6", got)
+	}
+
+	// The operator saves the form, only meaning to fix the description.
+	if _, err := service.UpdateProduct(ctx, bolt.ID, "Stainless bolt", opened.Balance, opened.Version); err != nil {
+		// Refusing the write is a correct outcome: the product changed underneath.
+		t.Logf("update refused: %v", err)
+	}
+
+	if got := balanceOf(t, ctx, pool, bolt.ID); got != 6 {
+		t.Errorf("balance = %d, want the debited 6 to survive the edit", got)
+	}
+}
+
+// Two operators saving the same product at the same time: one write wins and
+// the other is told the product moved, instead of one silently overwriting the
+// other.
+func TestConcurrentEditsDoNotLoseAnUpdate(t *testing.T) {
+	ctx, store, pool := newTestStore(t)
+	bolt := createProduct(t, ctx, store, "P-1", "Steel bolt", 10)
+	service := stock.NewService(store)
+
+	const editors = 8
+	start := make(chan struct{})
+	results := make(chan error, editors)
+
+	for editor := range editors {
+		go func() {
+			<-start
+			_, err := service.UpdateProduct(ctx, bolt.ID,
+				fmt.Sprintf("Bolt edited by %d", editor), 10+editor, bolt.Version)
+			results <- err
+		}()
+	}
+	close(start)
+
+	accepted, refused := 0, 0
+	for range editors {
+		switch err := <-results; {
+		case err == nil:
+			accepted++
+		case errors.Is(err, stock.ErrProductChanged):
+			refused++
+		default:
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	if accepted != 1 {
+		t.Errorf("%d writes were accepted, want exactly 1 from the same starting version", accepted)
+	}
+	if refused != editors-1 {
+		t.Errorf("%d writes were refused, want %d", refused, editors-1)
+	}
+
+	var version int
+	if err := pool.QueryRow(ctx, `SELECT version FROM products WHERE id = $1`, bolt.ID).Scan(&version); err != nil {
+		t.Fatalf("read version: %v", err)
+	}
+	if version != bolt.Version+1 {
+		t.Errorf("version = %d, want exactly one increment", version)
 	}
 }

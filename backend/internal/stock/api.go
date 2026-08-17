@@ -218,6 +218,9 @@ type productRequest struct {
 type updateProductRequest struct {
 	Description string `json:"description"`
 	Balance     int    `json:"balance"`
+	// Version is the one the caller last read. It is what makes a concurrent
+	// change visible instead of silently overwritten.
+	Version int `json:"version"`
 }
 
 type productResponse struct {
@@ -225,6 +228,7 @@ type productResponse struct {
 	Code        string    `json:"code"`
 	Description string    `json:"description"`
 	Balance     int       `json:"balance"`
+	Version     int       `json:"version"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -301,7 +305,7 @@ func (a *API) updateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	product, err := a.service.UpdateProduct(r.Context(), id, request.Description, request.Balance)
+	product, err := a.service.UpdateProduct(r.Context(), id, request.Description, request.Balance, request.Version)
 	if err != nil {
 		httpx.WriteError(w, r, err)
 		return
@@ -323,6 +327,7 @@ func toProductResponse(product Product) productResponse {
 		Code:        product.Code,
 		Description: product.Description,
 		Balance:     product.Balance,
+		Version:     product.Version,
 		CreatedAt:   product.CreatedAt,
 		UpdatedAt:   product.UpdatedAt,
 	}

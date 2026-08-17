@@ -27,7 +27,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-const productColumns = `id, code, description, balance, created_at, updated_at`
+const productColumns = `id, code, description, balance, version, created_at, updated_at`
 
 // Create inserts a product and returns it with the values assigned by the
 // database. A repeated code is reported as ErrDuplicatedCode.
@@ -49,22 +49,41 @@ func (s *Store) Create(ctx context.Context, product Product) (Product, error) {
 }
 
 // Update stores the current values of an existing product.
+// Update writes a product only if it still looks the way the caller last saw
+// it. The version it read has to match the one stored, so an edit made from a
+// stale screen is refused instead of overwriting whatever happened since —
+// a printed invoice that debited the balance, most of all.
 func (s *Store) Update(ctx context.Context, product Product) (Product, error) {
 	row := s.pool.QueryRow(ctx, `
 		UPDATE products
-		SET description = $2, balance = $3, updated_at = now()
-		WHERE id = $1
+		SET description = $2, balance = $3, version = version + 1, updated_at = now()
+		WHERE id = $1 AND version = $4
 		RETURNING `+productColumns,
-		product.ID, product.Description, product.Balance)
+		product.ID, product.Description, product.Balance, product.Version)
 
 	updated, err := scanProduct(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return Product{}, ErrProductNotFound
+			// Nothing was written: either the product is gone or somebody
+			// changed it first. The difference is what the caller acts on.
+			return Product{}, s.explainFailedUpdate(ctx, product.ID)
 		}
 		return Product{}, fmt.Errorf("update product: %w", err)
 	}
 	return updated, nil
+}
+
+// explainFailedUpdate tells a missing product from one that moved on.
+func (s *Store) explainFailedUpdate(ctx context.Context, id uuid.UUID) error {
+	var version int
+	err := s.pool.QueryRow(ctx, `SELECT version FROM products WHERE id = $1`, id).Scan(&version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrProductNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read product version: %w", err)
+	}
+	return ErrProductChanged
 }
 
 // GetByID returns a single product, or ErrProductNotFound.
@@ -254,6 +273,7 @@ func scanProduct(row rowScanner) (Product, error) {
 		&product.Code,
 		&product.Description,
 		&product.Balance,
+		&product.Version,
 		&product.CreatedAt,
 		&product.UpdatedAt,
 	)

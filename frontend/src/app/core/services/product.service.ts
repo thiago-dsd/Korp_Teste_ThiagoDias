@@ -38,6 +38,7 @@ interface ProductPayload {
   code: string;
   description: string;
   balance: number;
+  version: number;
   created_at: string;
   updated_at: string;
 }
@@ -154,6 +155,7 @@ function toProduct(payload: ProductPayload): Product {
     code: payload.code,
     description: payload.description,
     balance: payload.balance,
+    version: payload.version,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
   };

@@ -24,8 +24,12 @@ type Product struct {
 	Code        string
 	Description string
 	Balance     int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Version is bumped by every write. A caller sends back the version it
+	// read, which is how a change made in the meantime is noticed instead of
+	// being silently overwritten.
+	Version   int
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // NewProduct validates and normalizes the data of a product to be created.
@@ -82,6 +86,10 @@ var (
 	// ErrInvalidProduct reports validation failures; the offending fields are
 	// carried in the error details.
 	ErrInvalidProduct = apperr.Invalid("invalid_product", "Product data is invalid.")
+	// ErrProductChanged reports an edit based on a version that is no longer
+	// current, which means somebody else changed the product first.
+	ErrProductChanged = apperr.Conflict("product_changed",
+		"This product changed while you were editing it. Reload it and try again.")
 	// ErrProductNotFound reports a product that does not exist.
 	ErrProductNotFound = apperr.NotFound("product_not_found", "Product was not found.")
 	// ErrDuplicatedCode reports a product code already in use.

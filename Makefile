@@ -52,7 +52,7 @@ test-backend: ## Run the Go unit tests
 	cd backend && go test ./...
 
 .PHONY: test-backend-integration
-test-backend-integration: ## Run the Go tests including the database integration tests
+test-backend-integration: ## Run the Go tests including the database integration tests, under the race detector
 	cd backend && \
 		TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/stock_test?sslmode=disable \
 		STOCK_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/stock_test?sslmode=disable \
@@ -60,7 +60,7 @@ test-backend-integration: ## Run the Go tests including the database integration
 		IDENTITY_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/identity_test?sslmode=disable \
 		MESSAGING_TEST_DATABASE_URL=$(POSTGRES_BASE_URL)/messaging_test?sslmode=disable \
 		RABBITMQ_TEST_URL=$(RABBITMQ_URL) \
-		go test ./... -count=1
+		go test -race ./... -count=1
 
 .PHONY: test-frontend
 test-frontend: ## Run the Angular unit tests

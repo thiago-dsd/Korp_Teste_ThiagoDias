@@ -4,6 +4,12 @@ export interface Product {
   code: string;
   description: string;
   balance: number;
+  /**
+   * Bumped by every change, including the debit of a printed invoice. It is
+   * sent back when saving so an edit made from a screen that is out of date is
+   * refused instead of overwriting whatever happened since.
+   */
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -19,4 +25,6 @@ export interface NewProduct {
 export interface ProductUpdate {
   description: string;
   balance: number;
+  /** The version the form was loaded with. */
+  version: number;
 }

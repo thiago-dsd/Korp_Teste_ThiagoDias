@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,7 +34,12 @@ func testLimits() stock.Limits {
 }
 
 // memoryRepository is an in-memory ProductRepository for handler tests.
+// memoryRepository is guarded by a mutex because the handler tests drive it
+// from several goroutines at once. Without it the tests that claim to prove
+// something about concurrency would only be proving that the map got lucky.
 type memoryRepository struct {
+	mu sync.Mutex
+
 	products map[uuid.UUID]stock.Product
 	failWith error
 }
@@ -42,6 +49,9 @@ func newMemoryRepository() *memoryRepository {
 }
 
 func (r *memoryRepository) Create(ctx context.Context, product stock.Product) (stock.Product, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return stock.Product{}, r.failWith
 	}
@@ -51,6 +61,7 @@ func (r *memoryRepository) Create(ctx context.Context, product stock.Product) (s
 		}
 	}
 	product.ID = uuid.New()
+	product.Version = 1
 	product.CreatedAt = time.Now().UTC()
 	product.UpdatedAt = product.CreatedAt
 	r.products[product.ID] = product
@@ -58,18 +69,32 @@ func (r *memoryRepository) Create(ctx context.Context, product stock.Product) (s
 }
 
 func (r *memoryRepository) Update(ctx context.Context, product stock.Product) (stock.Product, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return stock.Product{}, r.failWith
 	}
-	if _, ok := r.products[product.ID]; !ok {
+	stored, ok := r.products[product.ID]
+	if !ok {
 		return stock.Product{}, stock.ErrProductNotFound
 	}
+	// The real store only writes when the version still matches; the fake has
+	// to do the same or the handler tests would pass against a rule the
+	// service does not actually have.
+	if product.Version != stored.Version {
+		return stock.Product{}, stock.ErrProductChanged
+	}
+	product.Version = stored.Version + 1
 	product.UpdatedAt = time.Now().UTC()
 	r.products[product.ID] = product
 	return product, nil
 }
 
 func (r *memoryRepository) GetByID(ctx context.Context, id uuid.UUID) (stock.Product, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return stock.Product{}, r.failWith
 	}
@@ -81,6 +106,9 @@ func (r *memoryRepository) GetByID(ctx context.Context, id uuid.UUID) (stock.Pro
 }
 
 func (r *memoryRepository) GetByCode(ctx context.Context, code string) (stock.Product, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return stock.Product{}, r.failWith
 	}
@@ -93,6 +121,9 @@ func (r *memoryRepository) GetByCode(ctx context.Context, code string) (stock.Pr
 }
 
 func (r *memoryRepository) List(ctx context.Context, query stock.Query) (stock.Page, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return stock.Page{}, r.failWith
 	}
@@ -140,6 +171,9 @@ func (r *memoryRepository) List(ctx context.Context, query stock.Query) (stock.P
 }
 
 func (r *memoryRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]stock.Product, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return nil, r.failWith
 	}
@@ -156,6 +190,9 @@ func (r *memoryRepository) FindByIDs(ctx context.Context, ids []uuid.UUID) ([]st
 // land or none does. The rules themselves live in the service, so they are
 // checked before this is ever called.
 func (r *memoryRepository) Adjust(ctx context.Context, adjustments []stock.Adjustment) ([]bulk.Result, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.failWith != nil {
 		return nil, r.failWith
 	}
@@ -427,7 +464,7 @@ func TestUpdateProductEndpoint(t *testing.T) {
 		`{"code":"P-1","description":"Steel bolt","balance":10}`))
 
 	recorder := doRequest(t, handler, http.MethodPut, "/products/"+created["id"].(string),
-		`{"description":"Stainless bolt","balance":42}`)
+		fmt.Sprintf(`{"description":"Stainless bolt","balance":42,"version":%v}`, created["version"]))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (%s)", recorder.Code, http.StatusOK, recorder.Body.String())
@@ -451,7 +488,7 @@ func TestUpdateProductEndpointValidatesBody(t *testing.T) {
 		`{"code":"P-1","description":"Steel bolt","balance":10}`))
 
 	recorder := doRequest(t, handler, http.MethodPut, "/products/"+created["id"].(string),
-		`{"description":"","balance":-3}`)
+		fmt.Sprintf(`{"description":"","balance":-3,"version":%v}`, created["version"]))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)

@@ -194,7 +194,7 @@ func (s *Store) Adjust(ctx context.Context, adjustments []Adjustment) ([]bulk.Re
 		// condition is what keeps the balance from going negative.
 		row := tx.QueryRow(ctx, `
 			UPDATE products
-			SET balance = balance + $2, updated_at = now()
+			SET balance = balance + $2, version = version + 1, updated_at = now()
 			WHERE (id = $1::uuid OR ($1::uuid IS NULL AND upper(code) = upper($3)))
 			  AND balance + $2 >= 0
 			RETURNING `+productColumns,

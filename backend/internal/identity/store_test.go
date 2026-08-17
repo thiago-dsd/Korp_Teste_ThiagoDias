@@ -133,12 +133,20 @@ func TestRefreshRotatesTheToken(t *testing.T) {
 // The scenario rotation exists for: a token that leaked is replayed after the
 // real client already used it. Both sessions must end.
 func TestReplayingAnOldRefreshTokenEndsTheWholeSession(t *testing.T) {
-	ctx, service, _, _ := newTestService(t)
+	ctx, service, _, pool := newTestService(t)
 	_, tokens := register(t, ctx, service, "ada@example.com")
 
 	_, rotated, err := service.Refresh(ctx, tokens.RefreshToken, "legitimate client")
 	if err != nil {
 		t.Fatalf("Refresh() returned error: %v", err)
+	}
+
+	// Past the window where a second presentation is still one honest client
+	// racing itself; see ReuseGracePeriod.
+	if _, err := pool.Exec(ctx, `
+		UPDATE refresh_tokens SET used_at = used_at - $1::interval WHERE used_at IS NOT NULL`,
+		(identity.ReuseGracePeriod + time.Minute).String()); err != nil {
+		t.Fatalf("age the used token: %v", err)
 	}
 
 	// The attacker replays the token the client already exchanged.
@@ -458,5 +466,78 @@ func TestConcurrentGuessesStillLockTheAccount(t *testing.T) {
 	}
 	if _, _, err := service.Login(ctx, "ada@example.com", password, "the owner"); !errors.Is(err, identity.ErrTooManyAttempts) {
 		t.Errorf("Login() returned %v, want the account locked", err)
+	}
+}
+
+// Two browser tabs hold the same refresh token. When the access token expires
+// they both refresh at the same moment: one wins and the other presents a token
+// that was just exchanged. Treating that as a stolen token ends the session and
+// signs the person out of a perfectly honest browser.
+func TestConcurrentRefreshDoesNotEndTheSession(t *testing.T) {
+	ctx, service, _, _ := newTestService(t)
+	_, tokens := register(t, ctx, service, "ada@example.com")
+
+	const tabs = 2
+	start := make(chan struct{})
+	results := make(chan error, tabs)
+	issued := make(chan identity.TokenPair, tabs)
+
+	for range tabs {
+		go func() {
+			<-start
+			_, pair, err := service.Refresh(ctx, tokens.RefreshToken, "tests")
+			results <- err
+			if err == nil {
+				issued <- pair
+			}
+		}()
+	}
+	close(start)
+
+	succeeded := 0
+	for range tabs {
+		if err := <-results; err == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("%d refreshes succeeded, want exactly 1", succeeded)
+	}
+
+	// The session must survive: the tab that lost the race reads the token the
+	// winner stored and carries on.
+	winner := <-issued
+	if _, _, err := service.Refresh(ctx, winner.RefreshToken, "tests"); err != nil {
+		t.Errorf("the session was ended by an honest concurrent refresh: %v", err)
+	}
+}
+
+// The grace window must not become a hole: a token that resurfaces long after
+// it was spent is still treated as stolen and ends the whole family.
+func TestReplayAfterTheGraceWindowStillRevokesTheFamily(t *testing.T) {
+	ctx, service, _, pool := newTestService(t)
+	_, tokens := register(t, ctx, service, "ada@example.com")
+
+	_, rotated, err := service.Refresh(ctx, tokens.RefreshToken, "tests")
+	if err != nil {
+		t.Fatalf("Refresh() returned error: %v", err)
+	}
+
+	// Age the exchange past the window, as if the token had been stolen and
+	// replayed later.
+	if _, err := pool.Exec(ctx, `
+		UPDATE refresh_tokens SET used_at = used_at - $1::interval WHERE used_at IS NOT NULL`,
+		(identity.ReuseGracePeriod + time.Minute).String()); err != nil {
+		t.Fatalf("age the used token: %v", err)
+	}
+
+	if _, _, err := service.Refresh(ctx, tokens.RefreshToken, "attacker"); err == nil {
+		t.Fatal("replaying a spent token was accepted, want it refused")
+	}
+
+	// The session the attacker was racing against is gone too, which is the
+	// point of detecting reuse.
+	if _, _, err := service.Refresh(ctx, rotated.RefreshToken, "tests"); err == nil {
+		t.Error("the family survived a detected replay, want every token revoked")
 	}
 }
