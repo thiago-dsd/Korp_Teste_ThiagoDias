@@ -43,18 +43,37 @@ func (s *Store) Create(ctx context.Context, items []Item) (Invoice, error) {
 		return Invoice{}, fmt.Errorf("insert invoice: %w", err)
 	}
 
-	for _, item := range items {
-		var id uuid.UUID
-		err := tx.QueryRow(ctx, `
-			INSERT INTO invoice_items (invoice_id, product_id, product_code, product_description, quantity)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id`,
-			invoice.ID, item.ProductID, item.ProductCode, item.ProductDescription, item.Quantity,
-		).Scan(&id)
-		if err != nil {
-			return Invoice{}, fmt.Errorf("insert invoice item: %w", err)
-		}
-		item.ID = id
+	// The items go in with one statement rather than one per line. An invoice
+	// may carry a hundred products, and a round trip each turned a write that
+	// should cost one into a write that costs a hundred.
+	//
+	// The ids are generated here instead of by the database, so each stored row
+	// can be matched to the item it came from without depending on the order
+	// RETURNING happens to use.
+	ids := make([]uuid.UUID, len(items))
+	productIDs := make([]uuid.UUID, len(items))
+	codes := make([]string, len(items))
+	descriptions := make([]string, len(items))
+	quantities := make([]int, len(items))
+
+	for index, item := range items {
+		ids[index] = uuid.New()
+		productIDs[index] = item.ProductID
+		codes[index] = item.ProductCode
+		descriptions[index] = item.ProductDescription
+		quantities[index] = item.Quantity
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO invoice_items (id, invoice_id, product_id, product_code, product_description, quantity)
+		SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::text[], $5::text[], $6::int[])`,
+		ids, invoiceIDs(invoice.ID, len(items)), productIDs, codes, descriptions, quantities,
+	); err != nil {
+		return Invoice{}, fmt.Errorf("insert invoice items: %w", err)
+	}
+
+	for index, item := range items {
+		item.ID = ids[index]
 		invoice.Items = append(invoice.Items, item)
 	}
 
@@ -293,4 +312,14 @@ func scanInvoice(row rowScanner) (Invoice, error) {
 	}
 	invoice.Items = make([]Item, 0)
 	return invoice, nil
+}
+
+// invoiceIDs repeats one invoice id for every item, so the whole batch can be
+// passed as parallel arrays to a single insert.
+func invoiceIDs(id uuid.UUID, count int) []uuid.UUID {
+	ids := make([]uuid.UUID, count)
+	for index := range ids {
+		ids[index] = id
+	}
+	return ids
 }

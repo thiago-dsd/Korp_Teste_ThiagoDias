@@ -193,6 +193,12 @@ curl -X POST localhost:8081/internal/failure-simulation \
   -d '{"enabled":true}'
 ```
 
+## Performance
+
+Load scenarios, measured results, the one optimisation the data justified and the budgets that
+catch regressions are in [docs/performance.md](docs/performance.md). The load generator lives in
+`backend/cmd/loadgen`.
+
 ## Requirements
 
 - Go 1.26+
