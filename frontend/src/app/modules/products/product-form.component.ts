@@ -29,7 +29,7 @@ export class ProductFormComponent {
   readonly failure = input<ApiError | null>(null);
 
   readonly save = output<NewProduct>();
-  readonly cancel = output<void>();
+  readonly cancelled = output<void>();
 
   private readonly formBuilder = inject(FormBuilder);
   private readonly submitted = signal(false);

@@ -101,6 +101,10 @@ jobs:
         working-directory: frontend
         run: npm run prettier:verify
 
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
       - name: Tests
         working-directory: frontend
         run: npm test

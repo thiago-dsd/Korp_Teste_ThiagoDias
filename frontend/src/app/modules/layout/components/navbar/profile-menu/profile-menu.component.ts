@@ -41,6 +41,8 @@ import { ClickOutsideDirective } from '../../../../../shared/directives/click-ou
   ],
 })
 export class ProfileMenuComponent {
+  themeService = inject(ThemeService);
+
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -88,8 +90,6 @@ export class ProfileMenuComponent {
 
   public themeMode = ['light', 'dark'];
   public themeDirection = ['ltr', 'rtl'];
-
-  constructor(public themeService: ThemeService) {}
 
   /** Ends the session and goes back to the sign in screen. */
   signOut(): void {

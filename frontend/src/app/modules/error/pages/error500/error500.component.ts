@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { ButtonComponent } from 'src/app/shared/components/button/button.component';
@@ -10,7 +10,7 @@ import { ButtonComponent } from 'src/app/shared/components/button/button.compone
   templateUrl: './error500.component.html',
 })
 export class Error500Component {
-  constructor(private router: Router) {}
+  private router = inject(Router);
 
   goToHomePage() {
     this.router.navigate(['/']);

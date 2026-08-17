@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { environment } from 'src/environments/environment';
 
 @Component({
@@ -8,10 +8,6 @@ import { environment } from 'src/environments/environment';
   changeDetection: ChangeDetectionStrategy.Eager,
   imports: [],
 })
-export class ResponsiveHelperComponent implements OnInit {
-  public env: any = environment;
-
-  constructor() {}
-
-  ngOnInit(): void {}
+export class ResponsiveHelperComponent {
+  public env = environment;
 }

@@ -220,6 +220,13 @@ curl -X POST localhost:8081/internal/failure-simulation \
   -d '{"enabled":true}'
 ```
 
+## Technical write-up
+
+The document the challenge asks for — Angular lifecycle hooks, RxJS, libraries, Go dependency
+management and frameworks, error handling — is in
+[docs/detalhamento-tecnico.md](docs/detalhamento-tecnico.md), written in Portuguese for the
+people evaluating it.
+
 ## Performance
 
 Load scenarios, measured results, the one optimisation the data justified and the budgets that
@@ -263,6 +270,7 @@ decision rather than a development one.
 make check-backend             # gofmt, go vet and Go unit tests
 make test-backend-integration  # adds the tests that need a real PostgreSQL
 make test-frontend             # Angular unit tests
+cd frontend && npm run lint    # ESLint with the Angular and accessibility rules
 ```
 
 Integration tests are skipped when `TEST_DATABASE_URL` is not set, so the unit suite runs

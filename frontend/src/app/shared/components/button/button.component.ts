@@ -24,7 +24,7 @@ export class ButtonComponent implements OnInit {
   shape = input<ButtonProps['shape']>('rounded');
   tone = input<ButtonProps['tone']>('primary');
   shadow = input<ButtonProps['shadow']>('none');
-  type = input<String>('submit');
+  type = input<string>('submit');
   full = input(false, {
     transform: (value: boolean | string) => (typeof value === 'string' ? value === '' : value),
   });

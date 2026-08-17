@@ -51,20 +51,6 @@ describe('InvoiceNewComponent', () => {
     });
   }
 
-  function draftPayload(items: { code: string; id: string; quantity: number }[], warnings: string[] = []) {
-    return {
-      items: items.map((item) => ({
-        product_id: item.id,
-        product_code: item.code,
-        product_description: 'Steel bolt',
-        quantity: item.quantity,
-        balance: 10,
-      })),
-      warnings,
-      model: 'gpt-test',
-    };
-  }
-
   function addLine(productId: string, quantity: number): void {
     component.lineForm.setValue({ productId, quantity });
     component.addLine();

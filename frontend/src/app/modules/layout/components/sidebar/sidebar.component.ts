@@ -1,5 +1,5 @@
 import { NgClass } from '@angular/common';
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import packageJson from '../../../../../../package.json';
 import { MenuService } from '../../services/menu.service';
@@ -12,12 +12,10 @@ import { SidebarMenuComponent } from './sidebar-menu/sidebar-menu.component';
   changeDetection: ChangeDetectionStrategy.Eager,
   imports: [NgClass, AngularSvgIconModule, SidebarMenuComponent],
 })
-export class SidebarComponent implements OnInit {
-  public appJson: any = packageJson;
+export class SidebarComponent {
+  menuService = inject(MenuService);
 
-  constructor(public menuService: MenuService) {}
-
-  ngOnInit(): void {}
+  public appJson: { version: string; displayName: string } = packageJson;
 
   public toggleSidebar() {
     this.menuService.toggleSidebar();

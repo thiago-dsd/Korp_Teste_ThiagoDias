@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { NgxSonnerToaster } from 'ngx-sonner';
 import { ThemeService } from './core/services/theme.service';
@@ -11,7 +11,7 @@ import { ResponsiveHelperComponent } from './shared/components/responsive-helper
   imports: [RouterOutlet, ResponsiveHelperComponent, NgxSonnerToaster],
 })
 export class AppComponent {
-  title = 'Invoice System';
+  themeService = inject(ThemeService);
 
-  constructor(public themeService: ThemeService) {}
+  title = 'Invoice System';
 }

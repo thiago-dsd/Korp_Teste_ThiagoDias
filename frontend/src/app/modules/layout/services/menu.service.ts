@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy, signal } from '@angular/core';
+import { Injectable, OnDestroy, signal, inject } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Menu } from 'src/app/core/constants/menu';
@@ -8,16 +8,18 @@ import { MenuItem, SubMenuItem } from 'src/app/core/models/menu.model';
   providedIn: 'root',
 })
 export class MenuService implements OnDestroy {
+  private router = inject(Router);
+
   private _showSidebar = signal(true);
   private _showMobileMenu = signal(false);
   private _pagesMenu = signal<MenuItem[]>([]);
   private _subscription = new Subscription();
 
-  constructor(private router: Router) {
+  constructor() {
     /** Set dynamic menu */
     this._pagesMenu.set(Menu.pages);
 
-    let sub = this.router.events.subscribe((event) => {
+    const sub = this.router.events.subscribe((event) => {
       if (event instanceof NavigationEnd) {
         /** Expand menu base on active route */
         this._pagesMenu().forEach((menu) => {
@@ -82,14 +84,17 @@ export class MenuService implements OnDestroy {
     submenu.expanded = !submenu.expanded;
   }
 
-  private expand(items: Array<any>) {
+  private expand(items: SubMenuItem[]) {
     items.forEach((item) => {
       item.expanded = this.isActive(item.route);
       if (item.children) this.expand(item.children);
     });
   }
 
-  public isActive(instruction: any): boolean {
+  public isActive(instruction: string | null | undefined): boolean {
+    if (!instruction) {
+      return false;
+    }
     return this.router.isActive(this.router.createUrlTree([instruction]), {
       paths: 'subset',
       queryParams: 'subset',

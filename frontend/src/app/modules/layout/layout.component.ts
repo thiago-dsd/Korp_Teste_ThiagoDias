@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Event, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { FooterComponent } from './components/footer/footer.component';
 import { NavbarComponent } from './components/navbar/navbar.component';
@@ -12,9 +12,11 @@ import { SidebarComponent } from './components/sidebar/sidebar.component';
   imports: [SidebarComponent, NavbarComponent, RouterOutlet, FooterComponent],
 })
 export class LayoutComponent implements OnInit {
+  private router = inject(Router);
+
   private mainContent: HTMLElement | null = null;
 
-  constructor(private router: Router) {
+  constructor() {
     this.router.events.subscribe((event: Event) => {
       if (event instanceof NavigationEnd) {
         if (this.mainContent) {

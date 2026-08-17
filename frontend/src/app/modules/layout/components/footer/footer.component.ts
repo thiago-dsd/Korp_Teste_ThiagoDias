@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 
 @Component({
   selector: 'app-footer',
@@ -7,10 +7,8 @@ import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.Eager,
   standalone: true,
 })
-export class FooterComponent implements OnInit {
+export class FooterComponent {
   public year: number = new Date().getFullYear();
 
   constructor() {}
-
-  ngOnInit(): void {}
 }

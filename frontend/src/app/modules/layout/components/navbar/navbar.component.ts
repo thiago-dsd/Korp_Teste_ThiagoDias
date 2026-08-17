@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { MenuService } from '../../services/menu.service';
 import { NavbarMenuComponent } from './navbar-menu/navbar-menu.component';
@@ -12,10 +12,8 @@ import { ProfileMenuComponent } from './profile-menu/profile-menu.component';
   changeDetection: ChangeDetectionStrategy.Eager,
   imports: [AngularSvgIconModule, NavbarMenuComponent, ProfileMenuComponent, NavbarMobileComponent],
 })
-export class NavbarComponent implements OnInit {
-  constructor(private menuService: MenuService) {}
-
-  ngOnInit(): void {}
+export class NavbarComponent {
+  private menuService = inject(MenuService);
 
   public toggleMobileMenu(): void {
     this.menuService.showMobileMenu = true;

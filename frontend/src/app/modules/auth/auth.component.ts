@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 
@@ -9,8 +9,6 @@ import { AngularSvgIconModule } from 'angular-svg-icon';
   changeDetection: ChangeDetectionStrategy.Eager,
   imports: [AngularSvgIconModule, RouterOutlet],
 })
-export class AuthComponent implements OnInit {
+export class AuthComponent {
   constructor() {}
-
-  ngOnInit(): void {}
 }
