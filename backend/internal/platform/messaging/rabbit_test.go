@@ -226,3 +226,70 @@ func TestPingReportsAClosedConnection(t *testing.T) {
 		t.Error("Ping() returned no error after closing, want one")
 	}
 }
+
+// A message the consumer gave up on has to be findable and, once whatever it
+// was waiting for is fixed, sendable back through the ordinary path.
+func TestDeadLetteredMessagesCanBeCountedAndReplayed(t *testing.T) {
+	ctx, rabbit, queue := requireRabbit(t)
+	spec := messaging.QueueSpec{Name: queue, RoutingKeys: []string{queue}}
+
+	if err := rabbit.DeclareQueue(spec); err != nil {
+		t.Fatalf("DeclareQueue() returned error: %v", err)
+	}
+
+	message, err := messaging.NewMessage(queue, "invoice-1", map[string]int{"n": 1})
+	if err != nil {
+		t.Fatalf("NewMessage() returned error: %v", err)
+	}
+	if err := rabbit.Publish(ctx, message); err != nil {
+		t.Fatalf("Publish() returned error: %v", err)
+	}
+
+	// A consumer that refuses the message sends it to the dead letter queue.
+	refuse, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_ = rabbit.Consume(refuse, spec, 1, func(context.Context, messaging.Message) error {
+		return errors.New("cannot handle this")
+	})
+
+	deadLetters := messaging.DeadLetterQueue(queue)
+	depth, err := rabbit.QueueDepth(deadLetters)
+	if err != nil {
+		t.Fatalf("QueueDepth() returned error: %v", err)
+	}
+	if depth != 1 {
+		t.Fatalf("dead letter depth = %d, want 1", depth)
+	}
+
+	// Replaying puts it back on the ordinary queue, keeping its id so a
+	// consumer that already applied it recognises the repeat.
+	replayed, err := rabbit.Replay(ctx, deadLetters, 10)
+	if err != nil {
+		t.Fatalf("Replay() returned error: %v", err)
+	}
+	if replayed != 1 {
+		t.Errorf("replayed %d messages, want 1", replayed)
+	}
+
+	received := make(chan messaging.Message, 1)
+	accept, stop := context.WithTimeout(ctx, 5*time.Second)
+	defer stop()
+	_ = rabbit.Consume(accept, spec, 1, func(_ context.Context, delivered messaging.Message) error {
+		received <- delivered
+		stop()
+		return nil
+	})
+
+	select {
+	case delivered := <-received:
+		if delivered.ID != message.ID {
+			t.Errorf("replayed message id = %s, want %s", delivered.ID, message.ID)
+		}
+	default:
+		t.Error("the replayed message never came back to the ordinary queue")
+	}
+
+	if depth, err := rabbit.QueueDepth(deadLetters); err != nil || depth != 0 {
+		t.Errorf("dead letter depth = %d (err %v), want it emptied", depth, err)
+	}
+}

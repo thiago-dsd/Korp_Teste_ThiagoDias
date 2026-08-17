@@ -130,6 +130,10 @@ func run() error {
 		Bulk:    cfg.RateLimits.Bulk,
 	})
 
+	// What the consumer gave up on is visible and can be sent back once the
+	// reason it failed is fixed.
+	messaging.NewDeadLetterAPI(rabbit, logger, contracts.BillingStockResultsQueue).Routes(mux, cfg.ServiceToken)
+
 	// Answers from the stock service close or reopen the invoice.
 	resultConsumer := messaging.NewConsumer("billing.stock_results", pool, logger,
 		billing.StockResultHandler(logger))

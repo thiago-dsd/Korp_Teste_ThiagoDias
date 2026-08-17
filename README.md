@@ -184,6 +184,20 @@ identities and reasons rather than whole entities, so a hundred items stay reada
 | Refresh token replayed | The session is revoked on the spot and both the attacker and the client have to sign in again |
 | Assistant unavailable or answering nonsense | The answer is discarded and the invoice is written by hand |
 
+When a message is given up on it lands in a dead letter queue, which is visible and replayable
+without opening the broker UI:
+
+```bash
+curl localhost:8082/internal/dead-letters -H "X-Service-Token: $SERVICE_TOKEN"
+curl -X POST localhost:8082/internal/dead-letters/replay \
+  -H "X-Service-Token: $SERVICE_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"queue":"billing.stock_results","limit":50}'
+```
+
+Replaying keeps the message id, so anything that was in fact already applied is recognised and
+skipped rather than done twice, and whatever still fails goes back to the dead letter queue
+instead of being lost.
+
 The stock service can be made to fail on purpose, which is useful for a demonstration:
 
 ```bash

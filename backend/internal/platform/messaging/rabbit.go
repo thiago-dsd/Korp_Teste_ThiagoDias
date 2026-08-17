@@ -329,3 +329,91 @@ func toMessage(raw amqp.Delivery) (Message, error) {
 		CorrelationID: raw.CorrelationId,
 	}, nil
 }
+
+// DeadLetterSuffix is appended to a queue name to form its dead letter queue.
+const DeadLetterSuffix = ".dlq"
+
+// DeadLetterQueue is where messages a consumer gave up on end up.
+func DeadLetterQueue(queue string) string { return queue + DeadLetterSuffix }
+
+// QueueDepth reports how many messages are waiting in a queue.
+//
+// A dead lettered message is work the system accepted and then failed to do,
+// so a depth above zero is not a curiosity: it is an invoice somewhere waiting
+// for something that will never arrive on its own.
+func (r *Rabbit) QueueDepth(queue string) (int, error) {
+	conn, err := r.connection()
+	if err != nil {
+		return 0, err
+	}
+	channel, err := conn.Channel()
+	if err != nil {
+		return 0, fmt.Errorf("open channel to inspect %s: %w", queue, err)
+	}
+	defer func() { _ = channel.Close() }()
+
+	// Passive: report what is there, never create it.
+	state, err := channel.QueueDeclarePassive(queue, true, false, false, false, nil)
+	if err != nil {
+		return 0, fmt.Errorf("inspect queue %s: %w", queue, err)
+	}
+	return state.Messages, nil
+}
+
+// Replay moves messages out of a dead letter queue and back to the exchange
+// they came from, so the ordinary consumer gets another chance at them.
+//
+// It is deliberately manual and bounded. A message is dead lettered because
+// retrying did not help, so replaying it only makes sense once somebody has
+// fixed whatever it was waiting for, and only in batches small enough to watch.
+// Messages keep their id, so anything that was in fact already applied is
+// recognised and skipped by the consumer rather than done twice.
+func (r *Rabbit) Replay(ctx context.Context, deadLetterQueue string, limit int) (int, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	conn, err := r.connection()
+	if err != nil {
+		return 0, err
+	}
+	channel, err := conn.Channel()
+	if err != nil {
+		return 0, fmt.Errorf("open channel to replay %s: %w", deadLetterQueue, err)
+	}
+	defer func() { _ = channel.Close() }()
+
+	replayed := 0
+	for replayed < limit {
+		if ctx.Err() != nil {
+			return replayed, ctx.Err()
+		}
+
+		delivery, ok, err := channel.Get(deadLetterQueue, false)
+		if err != nil {
+			return replayed, fmt.Errorf("read from %s: %w", deadLetterQueue, err)
+		}
+		if !ok {
+			break
+		}
+
+		message, err := toMessage(delivery)
+		if err != nil {
+			// It could not be read on the way in and will not be read now;
+			// leaving it where it is keeps the evidence.
+			_ = delivery.Nack(false, false)
+			continue
+		}
+
+		if err := r.Publish(ctx, message); err != nil {
+			// Put it back rather than lose it.
+			_ = delivery.Nack(false, true)
+			return replayed, fmt.Errorf("republish message %s: %w", message.ID, err)
+		}
+		if err := delivery.Ack(false); err != nil {
+			return replayed, fmt.Errorf("acknowledge replayed message: %w", err)
+		}
+		replayed++
+	}
+	return replayed, nil
+}

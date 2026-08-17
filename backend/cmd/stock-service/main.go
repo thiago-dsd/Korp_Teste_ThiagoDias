@@ -103,6 +103,10 @@ func run() error {
 	})
 	api.InternalRoutes(mux, cfg.ServiceToken)
 
+	// What the consumer gave up on is visible and can be sent back once the
+	// reason it failed is fixed.
+	messaging.NewDeadLetterAPI(rabbit, logger, contracts.StockPrintRequestsQueue).Routes(mux, cfg.ServiceToken)
+
 	// Print requests are consumed from the broker: the balances are debited
 	// and the outcome is published back through this service's outbox.
 	printConsumer := messaging.NewConsumer("stock.print_requests", pool, logger,
