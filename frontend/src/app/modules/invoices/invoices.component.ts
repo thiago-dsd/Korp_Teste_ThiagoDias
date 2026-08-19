@@ -9,17 +9,17 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormControl } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { toast } from 'ngx-sonner';
-import { catchError, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { EMPTY, catchError, distinctUntilChanged, map, of, switchMap, tap, timer } from 'rxjs';
 
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { BULK_MAX_ITEMS, BulkResponse, bulkSucceededIds } from 'src/app/core/models/bulk.model';
 import { Invoice, InvoiceStatus } from 'src/app/core/models/invoice.model';
-import { InvoiceFilters, InvoiceService } from 'src/app/core/services/invoice.service';
+import { PRINT_POLL_INTERVAL, InvoiceFilters, InvoiceService } from 'src/app/core/services/invoice.service';
 import { ApiErrorPipe } from 'src/app/core/i18n/api-error.pipe';
 import { translateErrorCode } from 'src/app/core/i18n/error-translation';
 import { LocaleDatePipe } from 'src/app/core/i18n/intl.pipe';
@@ -50,6 +50,7 @@ const STATUS_FILTERS: readonly (InvoiceStatus | '')[] = ['', 'OPEN', 'PRINTING',
 export class InvoicesComponent implements OnInit {
   private readonly invoices = inject(InvoiceService);
   readonly i18n = inject(TranslateService);
+  private readonly pollInterval = inject(PRINT_POLL_INTERVAL);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
@@ -119,6 +120,9 @@ export class InvoicesComponent implements OnInit {
 
   /** True while at least one invoice is waiting for the stock service. */
   readonly hasPrinting = computed(() => this.items().some((invoice) => invoice.status === 'PRINTING'));
+  // Built here rather than in ngOnInit: toObservable needs an injection
+  // context, and a field initializer is one.
+  private readonly printing$ = toObservable(this.hasPrinting);
 
   /**
    * Ids picked for printing in bulk. Only open invoices can be picked, and the
@@ -167,6 +171,8 @@ export class InvoicesComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.followPrinting();
+
     // The screen only offers the question box when a model is configured, the
     // same way the new-invoice screen offers the drafting assistant.
     this.invoices
@@ -240,8 +246,17 @@ export class InvoicesComponent implements OnInit {
     };
   }
 
-  private fetch() {
-    this.loading.set(true);
+  /**
+   * Reads the listing.
+   *
+   * `quiet` skips the loading state, which is what a poll running behind the
+   * table needs: showing the skeleton every second would make the rows flash
+   * while an invoice prints.
+   */
+  private fetch(quiet = false) {
+    if (!quiet) {
+      this.loading.set(true);
+    }
     this.loadFailure.set(null);
 
     return this.invoices.list(this.currentFilters()).pipe(
@@ -364,6 +379,27 @@ export class InvoicesComponent implements OnInit {
   /** Reads the listing again without changing what is being filtered on. */
   private reload(): void {
     this.fetch().pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+  }
+
+  /**
+   * Follows the invoices that are printing until they settle.
+   *
+   * Printing is asynchronous: the listing was read once, right after the
+   * request, when the invoice had just moved to PRINTING — and then nothing
+   * asked again. The row sat on "printing" until somebody reloaded the page,
+   * which reads as a system that hung rather than one that is working.
+   *
+   * The poll exists only while a row is actually printing, and stops on its
+   * own when none is.
+   */
+  private followPrinting(): void {
+    this.printing$
+      .pipe(
+        switchMap((printing) => (printing ? timer(this.pollInterval, this.pollInterval) : EMPTY)),
+        switchMap(() => this.fetch(true)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe();
   }
 
   /**

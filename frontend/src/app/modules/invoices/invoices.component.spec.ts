@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { apiErrorInterceptor } from 'src/app/core/interceptor/api-error.interceptor';
 import { InvoiceStatus } from 'src/app/core/models/invoice.model';
 import { environment } from 'src/environments/environment';
+import { PRINT_POLL_INTERVAL } from 'src/app/core/services/invoice.service';
 import { InvoicesComponent } from './invoices.component';
 
 const invoicesUrl = `${environment.billingApiUrl}/invoices`;
@@ -29,6 +30,16 @@ describe('InvoicesComponent', () => {
   let component: InvoicesComponent;
   let http: HttpTestingController;
 
+  /**
+   * Waits past exactly one tick of the poll interval provided below.
+   *
+   * Comfortably inside two ticks: a second one would cancel the first through
+   * switchMap, and a cancelled request cannot be answered.
+   */
+  function waitForPoll(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
   function text(): string {
     return (fixture.nativeElement as HTMLElement).textContent ?? '';
   }
@@ -41,6 +52,9 @@ describe('InvoicesComponent', () => {
         provideHttpClient(withInterceptors([apiErrorInterceptor])),
         provideHttpClientTesting(),
         provideRouter([]),
+        // The listing polls while an invoice prints; a second per tick would
+        // make these tests slow for no extra confidence.
+        { provide: PRINT_POLL_INTERVAL, useValue: 100 },
       ],
     }).compileComponents();
 
@@ -184,6 +198,42 @@ describe('InvoicesComponent', () => {
 
     expect(component.activeFilter()).toBe('CLOSED');
     expect(component.items().length).toBe(1);
+  });
+
+  it('should follow a printing invoice until it settles, without being asked', async () => {
+    // Printing is asynchronous. The listing was read once, right after the
+    // request, when the invoice had just moved to PRINTING — and then nothing
+    // asked again, so the row sat on "printing" until somebody reloaded.
+    http.expectOne(invoicesUrl).flush({ items: [invoicePayload('i-1', 1, 'PRINTING')] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.hasPrinting()).toBe(true);
+
+    await waitForPoll();
+    http.expectOne((request) => request.url === invoicesUrl).flush({
+      items: [invoicePayload('i-1', 1, 'CLOSED')],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.hasPrinting()).toBe(false);
+
+    // And it stops on its own once nothing is printing.
+    await waitForPoll();
+    expect(http.match((request) => request.url === invoicesUrl).length).toBe(0);
+  });
+
+  it('should not flash the loading state while polling behind the table', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [invoicePayload('i-1', 1, 'PRINTING')] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    await waitForPoll();
+    expect(component.loading()).toBe(false);
+    http.expectOne((request) => request.url === invoicesUrl).flush({
+      items: [invoicePayload('i-1', 1, 'CLOSED')],
+    });
+    await fixture.whenStable();
   });
 
   it('should offer a refresh while an invoice is being printed', async () => {
