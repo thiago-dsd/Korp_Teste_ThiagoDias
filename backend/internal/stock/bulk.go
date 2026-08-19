@@ -202,6 +202,19 @@ func (s *Store) Adjust(ctx context.Context, adjustments []Adjustment) ([]bulk.Re
 
 		product, err := scanProduct(row)
 		if err == nil {
+			// The note the operator wrote on the delivery is what makes this
+			// row readable months later, so it is kept with the movement.
+			if err := recordMovementTx(ctx, tx, Movement{
+				ProductID:    product.ID,
+				Delta:        adjustment.Delta,
+				BalanceAfter: product.Balance,
+				Source:       SourceAdjustment,
+				Reason:       adjustment.Reason,
+				ActorEmail:   actorFrom(ctx),
+			}); err != nil {
+				return results, err
+			}
+
 			results[index] = bulk.Result{
 				Index:     index,
 				Status:    bulk.Succeeded,

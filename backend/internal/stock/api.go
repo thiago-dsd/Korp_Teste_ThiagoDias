@@ -2,6 +2,7 @@ package stock
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/thiagodias/korp-invoices/internal/platform/authn"
 	"github.com/thiagodias/korp-invoices/internal/platform/bulk"
 	"github.com/thiagodias/korp-invoices/internal/platform/httpx"
+	"github.com/thiagodias/korp-invoices/internal/platform/pagination"
 	"github.com/thiagodias/korp-invoices/internal/platform/ratelimit"
 )
 
@@ -49,6 +51,10 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits
 	mux.Handle("POST /products", guard(admin(write(http.HandlerFunc(a.createProduct)))))
 	mux.Handle("GET /products", guard(read(http.HandlerFunc(a.listProducts))))
 	mux.Handle("GET /products/{id}", guard(read(http.HandlerFunc(a.getProduct))))
+	// Reading why a balance is what it is belongs with reading the balance
+	// itself, so an operator investigating a mismatch does not need an
+	// administrator to look for them.
+	mux.Handle("GET /products/{id}/movements", guard(read(http.HandlerFunc(a.listMovements))))
 	mux.Handle("PUT /products/{id}", guard(admin(write(http.HandlerFunc(a.updateProduct)))))
 
 	// One bulk call does the work of up to a hundred, so it has its own
@@ -337,4 +343,62 @@ func toProductResponse(product Product) productResponse {
 		CreatedAt:   product.CreatedAt,
 		UpdatedAt:   product.UpdatedAt,
 	}
+}
+
+// movementResponse is one change to a balance as it travels on the wire.
+type movementResponse struct {
+	ID           uuid.UUID `json:"id"`
+	Delta        int       `json:"delta"`
+	BalanceAfter int       `json:"balance_after"`
+	Source       string    `json:"source"`
+	Reason       string    `json:"reason,omitempty"`
+	InvoiceID    string    `json:"invoice_id,omitempty"`
+	ActorEmail   string    `json:"actor_email,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type movementListResponse struct {
+	Items      []movementResponse `json:"items"`
+	NextCursor string             `json:"next_cursor,omitempty"`
+}
+
+// listMovements answers why the balance of a product is what it is.
+func (a *API) listMovements(w http.ResponseWriter, r *http.Request) {
+	id, err := productID(r)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	limit, err := pagination.ParseLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		httpx.WriteError(w, r, ErrInvalidFilter.WithDetails(map[string]string{
+			"limit": fmt.Sprintf("must be a number between 1 and %d", pagination.MaxLimit),
+		}))
+		return
+	}
+
+	page, err := a.service.ListMovements(r.Context(), id, limit, r.URL.Query().Get("cursor"))
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	items := make([]movementResponse, 0, len(page.Items))
+	for _, movement := range page.Items {
+		item := movementResponse{
+			ID:           movement.ID,
+			Delta:        movement.Delta,
+			BalanceAfter: movement.BalanceAfter,
+			Source:       string(movement.Source),
+			Reason:       movement.Reason,
+			ActorEmail:   movement.ActorEmail,
+			CreatedAt:    movement.CreatedAt,
+		}
+		if movement.InvoiceID != uuid.Nil {
+			item.InvoiceID = movement.InvoiceID.String()
+		}
+		items = append(items, item)
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, movementListResponse{Items: items, NextCursor: page.NextCursor})
 }

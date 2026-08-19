@@ -31,8 +31,18 @@ const productColumns = `id, code, description, balance, version, created_at, upd
 
 // Create inserts a product and returns it with the values assigned by the
 // database. A repeated code is reported as ErrDuplicatedCode.
+//
+// The opening balance is a movement like any other, so it is recorded in the
+// same transaction: otherwise the history of a product would start with stock
+// that appeared from nowhere.
 func (s *Store) Create(ctx context.Context, product Product) (Product, error) {
-	row := s.pool.QueryRow(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Product{}, fmt.Errorf("begin create transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	row := tx.QueryRow(ctx, `
 		INSERT INTO products (code, description, balance)
 		VALUES ($1, $2, $3)
 		RETURNING `+productColumns,
@@ -45,6 +55,20 @@ func (s *Store) Create(ctx context.Context, product Product) (Product, error) {
 		}
 		return Product{}, fmt.Errorf("insert product: %w", err)
 	}
+
+	if err := recordMovementTx(ctx, tx, Movement{
+		ProductID:    created.ID,
+		Delta:        created.Balance,
+		BalanceAfter: created.Balance,
+		Source:       SourceRegistration,
+		ActorEmail:   actorFrom(ctx),
+	}); err != nil {
+		return Product{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Product{}, fmt.Errorf("commit create: %w", err)
+	}
 	return created, nil
 }
 
@@ -54,21 +78,55 @@ func (s *Store) Create(ctx context.Context, product Product) (Product, error) {
 // stale screen is refused instead of overwriting whatever happened since —
 // a printed invoice that debited the balance, most of all.
 func (s *Store) Update(ctx context.Context, product Product) (Product, error) {
-	row := s.pool.QueryRow(ctx, `
-		UPDATE products
-		SET description = $2, balance = $3, version = version + 1, updated_at = now()
-		WHERE id = $1 AND version = $4
-		RETURNING `+productColumns,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Product{}, fmt.Errorf("begin update transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// The balance before the write comes back with the row, so the movement
+	// can say how far it moved. Reading it in a separate statement would be a
+	// balance read and written back, which is exactly what the rest of this
+	// service refuses to do.
+	row := tx.QueryRow(ctx, `
+		WITH previous AS (
+			SELECT id, balance FROM products WHERE id = $1
+		), updated AS (
+			UPDATE products
+			SET description = $2, balance = $3, version = version + 1, updated_at = now()
+			WHERE id = $1 AND version = $4
+			RETURNING `+productColumns+`
+		)
+		SELECT updated.*, previous.balance
+		FROM updated JOIN previous ON previous.id = updated.id`,
 		product.ID, product.Description, product.Balance, product.Version)
 
-	updated, err := scanProduct(row)
-	if err != nil {
+	var updated Product
+	var balanceBefore int
+	if err := row.Scan(&updated.ID, &updated.Code, &updated.Description, &updated.Balance,
+		&updated.Version, &updated.CreatedAt, &updated.UpdatedAt, &balanceBefore); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Nothing was written: either the product is gone or somebody
 			// changed it first. The difference is what the caller acts on.
 			return Product{}, s.explainFailedUpdate(ctx, product.ID)
 		}
 		return Product{}, fmt.Errorf("update product: %w", err)
+	}
+
+	// A correction typed on the form is a movement too; recordMovementTx
+	// ignores the ones that only changed the description.
+	if err := recordMovementTx(ctx, tx, Movement{
+		ProductID:    updated.ID,
+		Delta:        updated.Balance - balanceBefore,
+		BalanceAfter: updated.Balance,
+		Source:       SourceEdit,
+		ActorEmail:   actorFrom(ctx),
+	}); err != nil {
+		return Product{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Product{}, fmt.Errorf("commit update: %w", err)
 	}
 	return updated, nil
 }

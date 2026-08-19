@@ -41,11 +41,18 @@ type memoryRepository struct {
 	mu sync.Mutex
 
 	products map[uuid.UUID]stock.Product
-	failWith error
+	// movements is only what this fake was told to hold: the real ledger is
+	// written inside the same transaction as the balance change, which is a
+	// store concern and is covered against a real database instead.
+	movements map[uuid.UUID][]stock.Movement
+	failWith  error
 }
 
 func newMemoryRepository() *memoryRepository {
-	return &memoryRepository{products: map[uuid.UUID]stock.Product{}}
+	return &memoryRepository{
+		products:  map[uuid.UUID]stock.Product{},
+		movements: map[uuid.UUID][]stock.Movement{},
+	}
 }
 
 func (r *memoryRepository) Create(ctx context.Context, product stock.Product) (stock.Product, error) {
@@ -735,5 +742,61 @@ func TestAdministratorsCanChangeTheCatalogue(t *testing.T) {
 
 	if recorder.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d (%s)", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+}
+
+func (r *memoryRepository) ListMovements(ctx context.Context, productID uuid.UUID, limit int, cursor string) (stock.MovementPage, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.failWith != nil {
+		return stock.MovementPage{}, r.failWith
+	}
+	return stock.MovementPage{Items: append([]stock.Movement(nil), r.movements[productID]...)}, nil
+}
+
+func TestMovementsEndpointReportsAnUnknownProductAsNotFound(t *testing.T) {
+	_, handler := newTestAPI(t)
+
+	recorder := doRequest(t, handler, http.MethodGet, "/products/"+uuid.New().String()+"/movements", "")
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+	if code := errorCode(t, recorder); code != "product_not_found" {
+		t.Errorf("error code = %q, want product_not_found: an empty history and an unknown product are different answers", code)
+	}
+}
+
+func TestMovementsEndpointRejectsAnImpossibleLimit(t *testing.T) {
+	_, handler := newTestAPI(t)
+	created := decodeProduct(t, doRequest(t, handler, http.MethodPost, "/products",
+		`{"code":"P-1","description":"Steel bolt","balance":10}`))
+
+	recorder := doRequest(t, handler, http.MethodGet, "/products/"+created["id"].(string)+"/movements?limit=nonsense", "")
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+	if code := errorCode(t, recorder); code != "invalid_filter" {
+		t.Errorf("error code = %q, want invalid_filter", code)
+	}
+}
+
+// An operator investigating a balance must not need an administrator to look
+// for them, so reading the history is a read like any other.
+func TestReadingTheHistoryIsAllowedForAnOperator(t *testing.T) {
+	_, handler := newTestAPI(t)
+	created := decodeProduct(t, doRequest(t, handler, http.MethodPost, "/products",
+		`{"code":"P-1","description":"Steel bolt","balance":10}`))
+
+	request := httptest.NewRequest(http.MethodGet, "/products/"+created["id"].(string)+"/movements", strings.NewReader(""))
+	request.Header.Set("Authorization", "Bearer "+signer.TokenForRole(t, "operator"))
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 }

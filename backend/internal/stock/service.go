@@ -16,6 +16,7 @@ type ProductRepository interface {
 	List(ctx context.Context, query Query) (Page, error)
 	FindByIDs(ctx context.Context, ids []uuid.UUID) ([]Product, error)
 	Adjust(ctx context.Context, adjustments []Adjustment) ([]bulk.Result, error)
+	ListMovements(ctx context.Context, productID uuid.UUID, limit int, cursor string) (MovementPage, error)
 }
 
 // Service holds the stock use cases.
@@ -90,4 +91,16 @@ func (s *Service) FindProducts(ctx context.Context, ids []uuid.UUID) ([]Product,
 		}
 	}
 	return products, nil
+}
+
+// ListMovements returns a page of the history of one product, newest first.
+//
+// The product is read first so an unknown id is a not found rather than an
+// empty history, which reads as "nothing ever moved" and is a different
+// answer.
+func (s *Service) ListMovements(ctx context.Context, productID uuid.UUID, limit int, cursor string) (MovementPage, error) {
+	if _, err := s.products.GetByID(ctx, productID); err != nil {
+		return MovementPage{}, err
+	}
+	return s.products.ListMovements(ctx, productID, limit, cursor)
 }

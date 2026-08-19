@@ -75,15 +75,29 @@ func DebitTx(ctx context.Context, tx pgx.Tx, invoiceID uuid.UUID, items []DebitI
 		// The condition on balance is what makes concurrent debits safe: the
 		// database rejects the update instead of letting the balance go
 		// negative, no matter how many invoices try at the same time.
-		tag, err := tx.Exec(ctx, `
+		var balanceAfter int
+		err := tx.QueryRow(ctx, `
 			UPDATE products
 			SET balance = balance - $2, version = version + 1, updated_at = now()
-			WHERE id = $1 AND balance >= $2`, item.ProductID, item.Quantity)
-		if err != nil {
-			return fmt.Errorf("debit product balance: %w", err)
-		}
-		if tag.RowsAffected() == 1 {
+			WHERE id = $1 AND balance >= $2
+			RETURNING balance`, item.ProductID, item.Quantity).Scan(&balanceAfter)
+		if err == nil {
+			// The invoice is the actor here, so the movement points at it
+			// rather than at a person: the invoice already records who
+			// printed it.
+			if err := recordMovementTx(ctx, tx, Movement{
+				ProductID:    item.ProductID,
+				Delta:        -item.Quantity,
+				BalanceAfter: balanceAfter,
+				Source:       SourceInvoice,
+				InvoiceID:    invoiceID,
+			}); err != nil {
+				return err
+			}
 			continue
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("debit product balance: %w", err)
 		}
 
 		// Nothing was updated: either the product is gone or the balance is
