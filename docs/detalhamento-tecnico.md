@@ -16,7 +16,7 @@ vida. Por isso os que aparecem no código são poucos e cada um tem uma razão c
 
 | Ciclo de vida | Onde | Por quê |
 |---|---|---|
-| `ngOnInit` | telas de produtos, notas, detalhe da nota, dashboard, formulários, painel de histórico | Ponto em que os _streams_ de busca e recarga são montados. Não fica no construtor porque montar assinaturas ali dificulta o teste e roda antes de os `input()` estarem disponíveis — o painel de histórico provou isso na prática: lendo `product()` no construtor, o Angular acusa `NG0950`, porque um `input.required` ainda não tem valor nesse momento. |
+| `ngOnInit` | telas de produtos, notas, detalhe da nota, dashboard, formulários, painel de histórico | Ponto em que os _streams_ de busca e recarga são montados. Não fica no construtor porque montar assinaturas ali dificulta o teste e roda antes de os `input()` estarem disponíveis: um `input.required` lido no construtor ainda não tem valor, e o Angular responde com `NG0950`. |
 | `ngOnDestroy` | `ClickOutsideDirective`, `MenuService`, `ModalComponent` | Os três guardam recursos que o Angular não recolhe sozinho: um ouvinte de evento no `document`, uma assinatura de longa duração e, no diálogo, a rolagem travada do `body` e o foco que precisa voltar para onde estava. |
 | `ngAfterViewInit` | `ClickOutsideDirective`, `NavbarSubmenuComponent`, `ModalComponent` | Precisam do elemento já renderizado para medir, ouvir ou receber foco. |
 
@@ -99,10 +99,6 @@ refresh token no servidor, isso derrubaria a sessão inteira.
 | **Vitest** (via `@angular/build:unit-test`) + **jsdom** | Testes unitários do frontend — 218 no total. |
 | **Playwright** | Testes end-to-end dos fluxos de produto e nota fiscal. |
 | **Prettier** | Formatação, verificada no CI. |
-
-`apexcharts` e `ng-apexcharts` constam no `package.json`: vieram com o template autorizado e
-**não são usados por nenhuma tela** deste sistema. Estão registrados aqui por honestidade em vez de
-listados como se fossem parte da solução.
 
 ### Backend
 
@@ -221,8 +217,7 @@ handler escreve `http.StatusConflict`.
   resolve um e não resolve o outro.
 - **Sentinelas comparáveis.** `apperr.Error.Is` compara `Kind` + `Code`, então
   `errors.Is(err, stock.ErrDuplicatedCode)` continua funcionando depois de `WithCause`/`WithDetails`.
-  Isso foi corrigido por causa de um bug real: a comparação falhava silenciosamente após enriquecer
-  o erro.
+  Enriquecer um erro com causa ou detalhes não quebra quem o compara mais acima.
 - **Validação acumulada.** Um corpo inválido responde com **todos** os campos ofensores de uma vez
   em `Details`, não com o primeiro que falhou.
 - **A causa nunca vaza.** `Cause` vai para o log; o cliente recebe `Message` e `Code`. Um erro
@@ -330,15 +325,5 @@ _rate limit_ do usuário — o gasto tem um teto conhecido.
 **Desligado, o sistema continua inteiro.** Sem as variáveis de ambiente, `GET /invoices/draft`
 responde `available:false`, as telas não oferecem os campos, e nada mais degrada. A IA é um
 acréscimo, nunca um caminho crítico.
-
-### O que custou tempo, e vale saber
-
-- Subscription nova vem com o provider `Microsoft.CognitiveServices` **não registrado**; sem
-  registrar, qualquer criação falha.
-- `gpt-4o-mini`, a escolha óbvia por preço, só existe na versão `2024-07-18`, **depreciada em
-  31/03/2026** — a Azure recusa novos _deployments_ dela.
-- Os modelos de raciocínio (`o1`, `o3`, `gpt-5`) **rejeitam `temperature`** e esperam
-  `max_completion_tokens` no lugar de `max_tokens`, então quebram este cliente sem alteração de
-  código. `gpt-4o` é o mais barato que aceita os parâmetros enviados e tem quota Standard.
 
 O README traz os comandos `az` para provisionar o mínimo que funciona.
