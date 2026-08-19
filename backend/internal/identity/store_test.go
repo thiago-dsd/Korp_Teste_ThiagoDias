@@ -542,9 +542,11 @@ func TestReplayAfterTheGraceWindowStillRevokesTheFamily(t *testing.T) {
 	}
 }
 
-// A system where nobody can manage the catalogue cannot be set up at all, so
-// the first account created administers it and everybody after is an operator.
-func TestFirstAccountBecomesTheAdministrator(t *testing.T) {
+// TEMPORARY, alongside the rule in CreateUser: every account registers as an
+// administrator, so a clean clone can register a product without a detour
+// through the database. When the system learns to grant the role, this goes
+// back to asserting that only the first account administers.
+func TestEveryAccountRegistersAsAdministrator(t *testing.T) {
 	ctx, service, _, _ := newTestService(t)
 
 	first, _ := register(t, ctx, service, "first@example.com")
@@ -553,7 +555,7 @@ func TestFirstAccountBecomesTheAdministrator(t *testing.T) {
 	}
 
 	second, _ := register(t, ctx, service, "second@example.com")
-	if second.Role != identity.RoleOperator {
-		t.Errorf("second account role = %q, want %q", second.Role, identity.RoleOperator)
+	if second.Role != identity.RoleAdmin {
+		t.Errorf("second account role = %q, want %q", second.Role, identity.RoleAdmin)
 	}
 }

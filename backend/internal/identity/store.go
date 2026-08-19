@@ -28,11 +28,23 @@ const userColumns = `id, email, name, role, password_hash, created_at, updated_a
 
 // CreateUser stores a new account, reporting a repeated address as ErrEmailTaken.
 func (s *Store) CreateUser(ctx context.Context, registration Registration, passwordHash string) (User, error) {
-	// The first account created administers the system: one where nobody can
-	// manage the catalogue could never be set up in the first place.
+	// TEMPORARY: every account is created as an administrator.
+	//
+	// The rule this replaces — first account administers, everyone after is an
+	// operator — is the right one, and the whole role machinery around it is
+	// untouched: `RequireRole(RoleAdmin)` still guards the catalogue endpoints,
+	// and an operator still cannot reach them. What is missing is any way to
+	// grant the role after the fact, so whoever registers second is locked out
+	// of registering a product with no path back short of editing the database.
+	// That makes the system impossible to demonstrate from a clean clone.
+	//
+	// Restoring it is one line, and should happen together with a way to grant
+	// access — see "Roles" in the README:
+	//
+	//	VALUES ($1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'operator' ELSE 'admin' END)
 	row := s.pool.QueryRow(ctx, `
 		INSERT INTO users (email, name, password_hash, role)
-		VALUES ($1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM users) THEN 'operator' ELSE 'admin' END)
+		VALUES ($1, $2, $3, 'admin')
 		RETURNING `+userColumns,
 		registration.Email, registration.Name, passwordHash)
 
