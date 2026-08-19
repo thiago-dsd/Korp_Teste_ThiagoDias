@@ -22,16 +22,17 @@ vida. Por isso os que aparecem no código são poucos e cada um tem uma razão c
 
 **O que substituiu os demais**, e é a parte que merece atenção:
 
-- **`takeUntilDestroyed(destroyRef)`** (8 arquivos) elimina o par
+- **`takeUntilDestroyed(destroyRef)`** (11 arquivos) elimina o par
   `ngOnDestroy` + `Subject` + `takeUntil` que normalmente aparece em toda tela. A assinatura morre
   junto com o componente sem que exista um método para isso.
 - **`effect()`** carrega o produto no formulário quando o `input()` muda — o papel que antes era do
   `ngOnChanges`, mas reagindo ao valor e não ao ciclo de renderização.
-- **`computed()`** (8 arquivos) deriva estado (`hasMore`, `selectionFull`, `pendingAdjustments`,
+- **`computed()`** (13 arquivos) deriva estado (`hasMore`, `selectionFull`, `pendingAdjustments`,
   `isAdmin`) em vez de recalcular em `ngDoCheck` ou no template.
 - **`input()` / `output()`** substituem `@Input`/`@Output`; `output()` aparece em
-  `product-form` (`save`, `cancel`) e `bulk-result` (`dismiss`).
-- **`inject()`** (13 arquivos) no lugar de injeção por construtor.
+  `product-form` (`save`, `cancelled`), `bulk-result` (`dismiss`), `modal` e
+  `product-movements` (`closed`).
+- **`inject()`** (39 arquivos) no lugar de injeção por construtor.
 
 A aplicação roda **_zoneless_** (`provideZonelessChangeDetection()` em `main.ts`): sem Zone.js, a
 detecção de mudanças é disparada pelos próprios signals, o que torna `OnPush` desnecessário na
@@ -51,7 +52,7 @@ menos código do que qualquer alternativa.
 
 Operadores em uso: `debounceTime`, `distinctUntilChanged`, `switchMap`, `startWith`, `catchError`,
 `tap`, `map`, `of`, `throwError`, `finalize`, `shareReplay`, `takeWhile`, `timer`, `forkJoin`,
-`firstValueFrom`, `Subject`, `Subscription`, `toSignal`, `takeUntilDestroyed`.
+`fromEvent`, `filter`, `Subscription`, `toSignal`, `takeUntilDestroyed`.
 
 Os três usos que justificam a biblioteca:
 
@@ -95,8 +96,8 @@ refresh token no servidor, isso derrubaria a sessão inteira.
 | **Tailwind CSS 4** | Estilos utilitários direto no template, com `@tailwindcss/forms` (campos), `@tailwindcss/typography`, `@tailwindcss/aspect-ratio` e `tailwind-scrollbar`. |
 | **angular-svg-icon** | Ícones SVG inline (Heroicons), permitindo colorir por CSS. |
 | **ngx-sonner** | Notificações _toast_ de confirmação e erro. |
-| **Vitest** (via `@angular/build:unit-test`) + **jsdom** | Testes unitários — 149 no total. |
-| **Playwright** | Testes end-to-end (escritos; ver "limitações conhecidas"). |
+| **Vitest** (via `@angular/build:unit-test`) + **jsdom** | Testes unitários do frontend — 218 no total. |
+| **Playwright** | Testes end-to-end dos fluxos de produto e nota fiscal. |
 | **Prettier** | Formatação, verificada no CI. |
 
 `apexcharts` e `ng-apexcharts` constam no `package.json`: vieram com o template autorizado e
@@ -120,7 +121,7 @@ estruturado (`log/slog`), concorrência — vem da biblioteca padrão.
 
 **Nenhuma.** Não há Angular Material, PrimeNG ou similar. A interface é construída com Tailwind e
 componentes próprios (`app-modal`, `app-bulk-result`, `app-invoice-status`, `app-stock-level`,
-`app-product-form`, `app-product-import`, `app-product-movements`).
+`app-product-form`, `app-product-import`, `app-product-movements`, `app-language-switcher`).
 
 O que uma biblioteca costuma dar de graça está resolvido em dois lugares e não espalhado pelos
 _templates_: `app-modal` concentra o que faz um diálogo ser um diálogo (Escape, foco inicial, foco
@@ -183,7 +184,8 @@ rota, autenticação → papel → limite da categoria.
 
 Também não há ORM. O SQL é escrito à mão porque as consultas que importam aqui não são as que um
 ORM gera bem: `UPDATE ... WHERE balance >= $2` que recusa saldo negativo no próprio banco,
-`FOR UPDATE SKIP LOCKED` no outbox, `INSERT ... ON CONFLICT DO NOTHING` para deduplicação,
+`FOR UPDATE SKIP LOCKED` no outbox, `ON CONFLICT (consumer, message_id) DO NOTHING` para
+reconhecer uma mensagem reentregue,
 paginação por _keyset_, `unnest` para inserir os itens de uma nota em uma ida ao banco.
 
 Migrações são versionadas e aplicadas pelo próprio serviço no _start_, com _advisory lock_ (só uma
@@ -340,33 +342,3 @@ acréscimo, nunca um caminho crítico.
   código. `gpt-4o` é o mais barato que aceita os parâmetros enviados e tem quota Standard.
 
 O README traz os comandos `az` para provisionar o mínimo que funciona.
-
----
-
-## Limitações conhecidas
-
-Registradas por honestidade, com o que cada uma custaria:
-
-- **Testes end-to-end (Playwright) escritos e não executados na suíte.** Os binários instalados na
-  máquina são de uma build diferente da que o `playwright-core` do projeto procura; `npx playwright
-  install` resolve. Os fluxos foram verificados em navegador real dirigindo o Chrome instalado por
-  `executablePath` — inclusive a revisão visual tela a tela, que encontrou quatro defeitos que os
-  testes unitários não pegam: um ícone inexistente pedido pelos links de voltar, filtros desligados
-  invisíveis no tema escuro, um botão desabilitado que ainda lia como disponível, e o campo de
-  busca colapsando em um quadrado no telefone.
-- **Estoque baixo é um limiar único** (5), não um ponto de reposição por produto. O catálogo não
-  tem esse campo, e acrescentar um que ninguém mantém seria pior do que um número legível por
-  todos; passa a valer a pena quando os produtos tiverem giros muito diferentes.
-- **O histórico de estoque começa na migração `0008`.** Produtos registrados antes não têm
-  movimentos, e a tela diz isso em vez de afirmar que nada se moveu. Reconstruir o passado não é
-  possível: os débitos antigos guardam apenas o `invoice_id`, não as quantidades.
-- **16 avisos de acessibilidade** no _layout_ herdado do template (menus que abrem por clique sem
-  equivalente de teclado). As regras ficaram ligadas como aviso em vez de desligadas, para que a
-  dívida continue contada; `ng lint` passa sem erros e roda no CI.
-- **Assistente de IA sem credenciais reais.** O código trata endpoint indisponível como caso
-  normal (a tela some) e foi validado contra um _stand-in_ que reproduz o contrato da Azure AI
-  Foundry.
-- **Busca textual não usa os índices trigram** e degrada linearmente com o catálogo. Foi medido,
-  documentado em [`performance.md`](performance.md) e **deliberadamente não otimizado**: forçar o
-  índice é 3x melhor para termo seletivo e 80x pior para termo amplo.
-- **Rate limiting é por instância.** Com várias réplicas, o limite se divide — documentado.
