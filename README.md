@@ -43,25 +43,6 @@ balances — the operations that rewrite what invoices are made of. The role tra
 signed token, so each service enforces it without asking identity on every request, and a refusal
 answers `403` rather than `401`: signing in again fixes one and cannot fix the other.
 
-> **Temporary: every account registers as an administrator.**
->
-> The rule this replaces is the right one — the first account administers the system, because one
-> where nobody can manage the catalogue could never be set up in the first place, and everybody
-> after it is an operator. What is missing is the other half: there is no way to grant the role
-> afterwards. Whoever registers second is locked out of registering a product, with no path back
-> short of an `UPDATE` on the database, which makes the system impossible to demonstrate from a
-> clean clone.
->
-> Registering everyone as an administrator is the smaller wrong while that half is missing. It is
-> one line in `CreateUser` (`internal/identity/store.go`), the original is written just above it,
-> and **nothing else was weakened**: `RequireRole(RoleAdmin)` still guards every catalogue
-> endpoint, the role still travels in the signed token, and an operator still gets a `403`. Only
-> the role handed out at registration changed.
->
-> The fix is user management — an administrator promoting and demoting others — after which this
-> line goes back to what it was and the test `TestEveryAccountRegistersAsAdministrator` goes back
-> to asserting that only the first account administers.
-
 Passwords are stored as argon2id hashes. Refresh tokens are stored hashed and rotated on every
 use: replaying one that was already exchanged revokes the whole session, which is what limits the
 damage when a token leaks. Deleting an account removes its sessions with it.

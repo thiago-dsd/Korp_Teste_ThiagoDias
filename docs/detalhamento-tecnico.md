@@ -2,8 +2,8 @@
 
 Documento exigido pelo desafio. As seções **1 a 7** respondem item a item o que a especificação
 pede, com o motivo de cada escolha — não só o que foi usado, mas por que valia a pena. As seções
-**8 e 9** cobrem duas decisões que o desafio não perguntou e que sustentam metade do
-comportamento do sistema: a mensageria e o provedor de IA.
+**8 a 11** cobrem o que o desafio não perguntou e sustenta boa parte do comportamento do
+sistema: a mensageria, o provedor de IA, os testes e a segurança.
 
 Autor: Thiago Dias · Repositório: <https://github.com/thiago-dsd/Korp_Teste_ThiagoDias>
 
@@ -123,15 +123,12 @@ O que uma biblioteca costuma dar de graça está resolvido em dois lugares e nã
 _templates_: `app-modal` concentra o que faz um diálogo ser um diálogo (Escape, foco inicial, foco
 devolvido ao fechar, rolagem travada atrás), e um punhado de _utilities_ `action-*` em `styles.css`
 concentra cor e estado de cada papel de ação — sólida, destrutiva, contornada, alternador ligado e
-desligado, ação só-texto —, deixando no elemento apenas tamanho e forma. Antes disso a mesma
-sequência de classes estava repetida em catorze _templates_, e três telas equivalentes tinham três
-comportamentos de `hover` diferentes.
+desligado, ação só-texto —, deixando no elemento apenas tamanho e forma.
 
 O motivo é específico deste sistema: as telas são poucas e o comportamento delas é o que importa —
 seleção que sobrevive à paginação, painel que mostra sucesso parcial, formulário que preserva o que
-foi digitado quando o servidor recusa. Uma biblioteca de componentes traria estilos prontos para
-telas que não temos e não resolveria nenhum desses comportamentos, que são os que exigiram
-trabalho de verdade.
+foi digitado quando o servidor recusa. Uma biblioteca de componentes resolve a aparência,
+que aqui foi a parte barata, e não esses comportamentos, que foram onde o trabalho esteve.
 
 ---
 
@@ -172,7 +169,7 @@ parâmetros, _middlewares_ encadeados e _binding_ de JSON — e a biblioteca pad
 três coisas. O que este projeto realmente precisava, nenhum deles daria pronto: outbox
 transacional, idempotência com replay, cerca entre tentativas de impressão, limitação por
 categoria de operação. Adicionar um framework significaria uma dependência a mais no caminho de
-toda requisição para resolver a parte fácil do problema.
+toda requisição para resolver o que a biblioteca padrão já resolve.
 
 Os _middlewares_ são funções `func(http.Handler) http.Handler` compostas por `httpx.Chain`:
 request id → log → recover → CORS → timeout → métricas → limite público → idempotência, e, por
@@ -327,3 +324,41 @@ responde `available:false`, as telas não oferecem os campos, e nada mais degrad
 acréscimo, nunca um caminho crítico.
 
 O README traz os comandos `az` para provisionar o mínimo que funciona.
+
+---
+
+## 10. Testes
+
+**429 funções de teste em 20 pacotes Go** e **218 testes no frontend**, rodando no CI a cada push.
+
+O backend testa contra Postgres de verdade, não contra mock de repositório: as consultas que
+importam aqui são justamente as que um mock não exercita — o débito condicional que recusa saldo
+negativo, o `FOR UPDATE SKIP LOCKED` do outbox, a paginação por _keyset_. Os cenários de
+concorrência sobem goroutines disputando o mesmo saldo — `TestConcurrentDebitsOfTheLastUnit` afirma
+que o saldo termina em zero e nunca negativo.
+
+No frontend são 38 arquivos de _spec_. Os das telas e serviços usam `HttpTestingController` para
+afirmar as três coisas que importam: o que é pedido ao serviço, o que aparece na tela e o que
+acontece quando o serviço recusa. O caminho de erro é coberto junto com o de sucesso — servidor
+fora do ar, requisição rejeitada, sucesso parcial de uma operação em lote.
+
+---
+
+## 11. Segurança
+
+- **Senhas** com `argon2id`, e a verificação roda mesmo quando a conta não existe, para que o tempo
+  de resposta não revele quais e-mails estão cadastrados.
+- **Tokens de acesso** assinados em RS256. Os outros serviços verificam pela chave pública via
+  JWKS, sem perguntar ao serviço de identidade a cada requisição.
+- **Refresh tokens** guardados como _hash_ e rotacionados a cada uso. Reapresentar um já trocado
+  revoga a sessão inteira — é o que limita o estrago quando um token vaza.
+- **Papel dentro do token assinado**, verificado por rota (`RequireRole`), com `403` para quem está
+  autenticado e não pode, e `401` para quem não está: entrar de novo resolve um e não resolve o
+  outro.
+- **Limite de requisições por categoria** — leitura, escrita, lote e IA têm orçamentos separados,
+  para que ler uma nota enquanto ela imprime não gaste o mesmo saldo de emitir notas.
+- **Entrada validada na borda**, com corpo limitado em tamanho, campos desconhecidos recusados e
+  todos os campos inválidos reportados de uma vez.
+- **CORS** com origem declarada por configuração, não `*`.
+
+---
