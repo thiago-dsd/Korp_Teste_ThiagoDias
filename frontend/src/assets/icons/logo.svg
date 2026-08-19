@@ -1,19 +1,25 @@
-<!-- <svg class="w-5 h-5 text-white"
-        viewBox="0 0 24 24"
-        fill="none">
-<path d="M12 4.75L19.25 9L12 13.25L4.75 9L12 4.75Z"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"></path>
-<path d="M9.25 12L4.75 15L12 19.25L19.25 15L14.6722 12"
-        stroke="currentColor"
-        stroke-width="1.5"
-        stroke-linecap="round"
-        stroke-linejoin="round"></path>
-</svg> -->
+<!--
+  The Korp mark: the initial drawn as a circle set against an angular stem,
+  with the counter between them left open so the background reads through it.
 
-<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
-  <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
-  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clip-rule="evenodd" />
+  Taken from `logo-initial.svg` unchanged — same path, same proportions. Only
+  the colour is lifted out to `currentColor`, so one file serves the brand red
+  it is normally shown in and the white it takes on a coloured tile (the
+  favicon). Nothing here is redrawn for size: it is a single silhouette with
+  one counter, which is what lets it hold together small, and why there is no
+  separate small-size variant to keep in step.
+
+  The viewBox is very nearly square (1129 x 1125). Size it by height and let
+  the width follow, never by both, or the circle stops being a circle. It needs
+  no padding of its own: the empty top-left and bottom-right corners are part
+  of the drawing and already give it room to breathe.
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1129 1125"
+  fill="currentColor"
+  role="img"
+  aria-label="Stockly">
+  <path
+    d="M363.063 390C366.74 595.133 531.689 760.897 736.5 765.883V1125H372C360.193 843.738 292.431 751.073 0 754.5V390H363.063ZM746 0C957.525 0 1129 171.475 1129 383C1129 594.525 957.525 766 746 766C742.824 766 739.657 765.96 736.5 765.883V390H363.063C363.022 387.672 363 385.338 363 383C363 171.475 534.475 0 746 0Z" />
 </svg>

@@ -1,5 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Invoice System">
-  <rect width="32" height="32" rx="7" fill="#4f46e5" />
-  <path d="M10 8h12v14.5l-2.4-1.7-2.4 1.7-2.4-1.7-2.4 1.7L10 24z" fill="#ffffff" />
-  <path d="M13 12h6M13 15.5h6" stroke="#4f46e5" stroke-width="1.6" stroke-linecap="round" />
+<!--
+  The mark on its own tile, for the browser tab and the home screen.
+
+  A tab icon has to hold against both a light and a dark browser chrome, which
+  a bare silhouette on transparency does not — so the mark is reversed to white
+  on a solid brand-red tile. The drawing is untouched; only its colour is, which
+  is what `currentColor` in `logo.svg` exists for.
+
+  The glyph covers about 72% of the tile, centred. Flat brand red rather than a
+  gradient, which turns to mud at 16px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Stockly">
+  <rect width="32" height="32" rx="7" fill="#F12D2D" />
+  <g transform="translate(4.48 4.521) scale(0.020407)" fill="#FFFFFF">
+    <path
+      d="M363.063 390C366.74 595.133 531.689 760.897 736.5 765.883V1125H372C360.193 843.738 292.431 751.073 0 754.5V390H363.063ZM746 0C957.525 0 1129 171.475 1129 383C1129 594.525 957.525 766 746 766C742.824 766 739.657 765.96 736.5 765.883V390H363.063C363.022 387.672 363 385.338 363 383C363 171.475 534.475 0 746 0Z" />
+  </g>
 </svg>

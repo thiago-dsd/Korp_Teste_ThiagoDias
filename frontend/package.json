@@ -1,6 +1,6 @@
 {
   "name": "invoice-system-frontend",
-  "displayName": "Invoice System",
+  "displayName": "Stockly",
   "version": "0.1.0",
   "description": "Angular frontend of the invoice system: products, invoices and printing.",
   "scripts": {

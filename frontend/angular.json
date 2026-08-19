@@ -31,6 +31,8 @@
             "inlineStyleLanguage": "css",
             "assets": [
               "src/favicon.svg",
+              "src/favicon.ico",
+              "src/apple-touch-icon.png",
               "src/assets"
             ],
             "styles": [
