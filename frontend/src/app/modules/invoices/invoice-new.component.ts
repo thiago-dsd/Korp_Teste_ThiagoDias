@@ -4,6 +4,7 @@ import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angu
 import { Router, RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 import { toast } from 'ngx-sonner';
+import { debounceTime, distinctUntilChanged, map, startWith, switchMap, tap } from 'rxjs';
 
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { Product } from 'src/app/core/models/product.model';
@@ -30,6 +31,14 @@ interface DraftLine {
  * so a quantity above the current balance is accepted here and refused later,
  * with a warning shown as soon as the line is added.
  */
+/**
+ * How much of the catalogue the picker holds at once.
+ *
+ * The service caps a page at 100. Past that the answer is the search box above
+ * the picker, not a longer list nobody scrolls.
+ */
+const CATALOGUE_PAGE_SIZE = 100;
+
 @Component({
   selector: 'app-invoice-new',
   imports: [ReactiveFormsModule, RouterLink, AngularSvgIconModule, TranslatePipe, ApiErrorPipe],
@@ -65,6 +74,18 @@ export class InvoiceNewComponent implements OnInit {
   readonly draftFailure = signal<ApiError | null>(null);
   readonly maxDraftLength = MAX_DRAFT_TEXT_LENGTH;
 
+  /**
+   * Narrows the catalogue offered in the picker.
+   *
+   * The picker used to hold whatever came back in one page and nothing else,
+   * so a catalogue larger than a page hid the rest of itself: a product that
+   * existed simply was not in the list, with nothing on screen saying so. It
+   * asks the service instead, which is what the catalogue screen already does.
+   */
+  readonly catalogueSearch = new FormControl('', { nonNullable: true });
+  /** True when the service had more matches than were brought back. */
+  readonly catalogueTruncated = signal(false);
+
   /** Products that are not on the invoice yet. */
   readonly available = computed(() => {
     const used = new Set(this.lines().map((line) => line.product.id));
@@ -86,12 +107,23 @@ export class InvoiceNewComponent implements OnInit {
         error: () => this.assistantAvailable.set(false),
       });
 
-    this.products
-      .list()
-      .pipe(takeUntilDestroyed(this.destroyRef))
+    this.catalogueSearch.valueChanges
+      .pipe(
+        debounceTime(300),
+        map((term) => term.trim()),
+        distinctUntilChanged(),
+        startWith(''),
+        tap(() => {
+          this.loadingCatalogue.set(true);
+          this.catalogueFailure.set(null);
+        }),
+        switchMap((search) => this.products.list({ search: search || undefined, limit: CATALOGUE_PAGE_SIZE })),
+        takeUntilDestroyed(this.destroyRef),
+      )
       .subscribe({
         next: (page) => {
           this.catalogue.set(page.items);
+          this.catalogueTruncated.set(page.nextCursor !== '');
           this.loadingCatalogue.set(false);
         },
         error: (error: ApiError) => {

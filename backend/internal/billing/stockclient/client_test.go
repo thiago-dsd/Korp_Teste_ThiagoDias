@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -235,5 +236,66 @@ func TestLookupHonoursContextCancellation(t *testing.T) {
 
 	if _, err := client.Lookup(ctx, []uuid.UUID{uuid.New()}); err == nil {
 		t.Fatal("Lookup() returned no error, want a timeout failure")
+	}
+}
+
+func TestListAllReadsEveryPageOfTheCatalogue(t *testing.T) {
+	// One page used to be the whole answer, which meant an assistant asked
+	// about a real product past the first page said it did not exist.
+	pages := 0
+	client := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + uuid.New().String() +
+				`","code":"AAA","description":"First page","balance":1}],"next_cursor":"page-2"}`))
+		case "page-2":
+			_, _ = w.Write([]byte(`{"items":[{"id":"` + uuid.New().String() +
+				`","code":"ZZZ","description":"Last page","balance":2}],"next_cursor":""}`))
+		default:
+			t.Errorf("unexpected cursor %q", r.URL.Query().Get("cursor"))
+		}
+	})
+
+	products, err := client.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if pages != 2 {
+		t.Errorf("requests = %d, want 2", pages)
+	}
+	if len(products) != 2 {
+		t.Fatalf("products = %d, want 2", len(products))
+	}
+	if products[1].Code != "ZZZ" {
+		t.Errorf("second page missing: got %q", products[1].Code)
+	}
+}
+
+func TestListAllStopsAtTheCatalogueCeiling(t *testing.T) {
+	// A catalogue that never ends must not become an endless number of
+	// requests: the assistants only put a couple of hundred products in front
+	// of the model, and past the ceiling the answer is a search.
+	requests := 0
+	client := newClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		items := make([]string, 0, 100)
+		for i := 0; i < 100; i++ {
+			items = append(items, `{"id":"`+uuid.New().String()+`","code":"P","description":"d","balance":1}`)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[` + strings.Join(items, ",") + `],"next_cursor":"more"}`))
+	})
+
+	products, err := client.ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll: %v", err)
+	}
+	if len(products) > 2000 {
+		t.Errorf("products = %d, want the ceiling to hold at 2000", len(products))
+	}
+	if requests > 25 {
+		t.Errorf("requests = %d, want the ceiling to stop the walk", requests)
 	}
 }

@@ -73,6 +73,23 @@
     novalidate>
     <div>
       <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">{{ 'invoiceNew.productLabel' | t }}</label>
+      <!--
+        The search narrows the picker at the service, not in the browser: the
+        picker holds one page, and a catalogue bigger than that used to hide
+        the rest of itself without saying so.
+      -->
+      <div class="relative mb-2">
+        <div class="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
+          <svg-icon src="assets/icons/heroicons/outline/magnifying-glass.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+        </div>
+        <label for="catalogue-search" class="sr-only">{{ 'invoiceNew.searchLabel' | t }}</label>
+        <input
+          id="catalogue-search"
+          type="search"
+          class="pl-9"
+          [formControl]="catalogueSearch"
+          [placeholder]="'invoiceNew.searchPlaceholder' | t" />
+      </div>
       <select
         id="line-product"
         formControlName="productId">
@@ -83,6 +100,11 @@
           <option [value]="product.id">{{ product.code }} — {{ product.description }} ({{ product.balance }})</option>
         }
       </select>
+      @if (catalogueTruncated()) {
+        <p class="text-muted-foreground mt-1 text-xs">{{ 'invoiceNew.catalogueTruncated' | t }}</p>
+      } @else if (!loadingCatalogue() && catalogue().length === 0 && catalogueSearch.value.trim()) {
+        <p class="text-muted-foreground mt-1 text-xs">{{ 'invoiceNew.noMatches' | t }}</p>
+      }
     </div>
 
     <div>

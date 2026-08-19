@@ -47,7 +47,7 @@ describe('InvoiceNewComponent', () => {
 
   function loadCatalogue(assistantAvailable = false): void {
     http.expectOne(`${invoicesUrl}/draft`).flush({ available: assistantAvailable });
-    http.expectOne(productsUrl).flush({
+    http.expectOne((request) => request.url === productsUrl).flush({
       items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
     });
   }
@@ -157,8 +157,35 @@ describe('InvoiceNewComponent', () => {
     expect(text()).toContain('O serviço de estoque está indisponível.');
   });
 
+  it('should narrow the catalogue at the service when the operator searches', async () => {
+    // The picker holds one page. A catalogue bigger than that used to hide the
+    // rest of itself, so a product that existed was simply not in the list.
+    http.expectOne((request) => request.url === productsUrl).flush({ items: [], next_cursor: 'more' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.catalogueTruncated()).toBe(true);
+
+    // The search is debounced, so the timer has to be pushed past it.
+    vi.useFakeTimers();
+    component.catalogueSearch.setValue('MART');
+    vi.advanceTimersByTime(400);
+    vi.useRealTimers();
+
+    const search = http.expectOne((request) => request.url === productsUrl && request.params.get('search') === 'MART');
+    expect(search.request.params.get('limit')).toBe('100');
+    search.flush({
+      items: [{ id: 'p-9', code: 'MART-01', description: 'Martelo', balance: 10, version: 1 }],
+      next_cursor: '',
+    });
+    await fixture.whenStable();
+
+    expect(component.catalogue().map((product) => product.code)).toEqual(['MART-01']);
+    expect(component.catalogueTruncated()).toBe(false);
+  });
+
   it('should explain when the catalogue cannot be loaded', async () => {
-    http.expectOne(productsUrl).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+    http.expectOne((request) => request.url === productsUrl).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -205,7 +232,7 @@ describe('InvoiceNewComponent with the assistant', () => {
     fixture.detectChanges();
 
     http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
-    http.expectOne(productsUrl).flush({
+    http.expectOne((request) => request.url === productsUrl).flush({
       items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
     });
     await fixture.whenStable();

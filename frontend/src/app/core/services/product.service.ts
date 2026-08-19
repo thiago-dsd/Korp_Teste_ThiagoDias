@@ -30,6 +30,8 @@ export interface ProductFilters {
   maxBalance?: number;
   sort?: 'code' | 'balance';
   order?: 'asc' | 'desc';
+  /** How many to bring back; the service caps it at 100. */
+  limit?: number;
 }
 
 /** Product as it travels on the wire. */
@@ -98,6 +100,9 @@ export class ProductService {
     }
     if (filters.order) {
       params = params.set('order', filters.order);
+    }
+    if (filters.limit !== undefined) {
+      params = params.set('limit', filters.limit);
     }
     if (cursor) {
       params = params.set('cursor', cursor);

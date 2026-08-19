@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,17 @@ import (
 
 // maxResponseBody bounds how much the client reads from the stock service.
 const maxResponseBody = 4 << 20 // 4 MiB
+
+// Bounds for reading the whole catalogue.
+const (
+	// cataloguePageSize is the largest page the stock service serves.
+	cataloguePageSize = 100
+	// maxCatalogueProducts stops a catalogue of any size from becoming an
+	// unbounded number of requests and an unbounded prompt. The assistants
+	// that read it only ever put a couple of hundred products in front of the
+	// model anyway; past this the answer is a search, not a bigger list.
+	maxCatalogueProducts = 2000
+)
 
 // ErrStockUnavailable reports that the stock service could not be reached.
 // The message is written for the operator using the screen.
@@ -85,7 +98,8 @@ type lookupRequest struct {
 }
 
 type productListResponse struct {
-	Items []Product `json:"items"`
+	Items      []Product `json:"items"`
+	NextCursor string    `json:"next_cursor"`
 }
 
 // Lookup resolves product ids into products. A rejection from the stock
@@ -123,27 +137,47 @@ func (c *Client) Lookup(ctx context.Context, ids []uuid.UUID) ([]Product, error)
 // sentence against real products.
 func (c *Client) ListAll(ctx context.Context) ([]Product, error) {
 	var products []Product
+	cursor := ""
 
-	err := c.breaker.Do(ctx, func(ctx context.Context) error {
-		return resilience.Retry(ctx, c.retry, func(ctx context.Context) error {
-			result, err := c.getCatalogue(ctx)
-			if err != nil {
-				return err
-			}
-			products = result
-			return nil
+	// One request answered one page, and the rest of the catalogue was simply
+	// missing: with more products than fit a page, an assistant asked about a
+	// real product answered that it did not exist. Reading to the end is what
+	// makes the name of this method true.
+	for {
+		var page productListResponse
+		err := c.breaker.Do(ctx, func(ctx context.Context) error {
+			return resilience.Retry(ctx, c.retry, func(ctx context.Context) error {
+				result, err := c.getCataloguePage(ctx, cursor)
+				if err != nil {
+					return err
+				}
+				page = result
+				return nil
+			})
 		})
-	})
-	if err != nil {
-		return nil, translateFailure(err)
+		if err != nil {
+			return nil, translateFailure(err)
+		}
+
+		products = append(products, page.Items...)
+		if page.NextCursor == "" || len(products) >= maxCatalogueProducts {
+			return products, nil
+		}
+		cursor = page.NextCursor
 	}
-	return products, nil
 }
 
-func (c *Client) getCatalogue(ctx context.Context) ([]Product, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/internal/products", nil)
+func (c *Client) getCataloguePage(ctx context.Context, cursor string) (productListResponse, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(cataloguePageSize))
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/internal/products?"+query.Encode(), nil)
 	if err != nil {
-		return nil, resilience.Permanent(fmt.Errorf("build catalogue request: %w", err))
+		return productListResponse{}, resilience.Permanent(fmt.Errorf("build catalogue request: %w", err))
 	}
 	request.Header.Set(httpx.ServiceTokenHeader, c.token)
 	if requestID := httpx.RequestIDFrom(ctx); requestID != "" {
@@ -152,28 +186,28 @@ func (c *Client) getCatalogue(ctx context.Context) ([]Product, error) {
 
 	response, err := c.http.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("call stock service: %w", err)
+		return productListResponse{}, fmt.Errorf("call stock service: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBody))
 	if err != nil {
-		return nil, fmt.Errorf("read stock response: %w", err)
+		return productListResponse{}, fmt.Errorf("read stock response: %w", err)
 	}
 
 	switch {
 	case response.StatusCode == http.StatusOK:
 		var parsed productListResponse
 		if err := json.Unmarshal(body, &parsed); err != nil {
-			return nil, resilience.Permanent(fmt.Errorf("decode stock response: %w", err))
+			return productListResponse{}, resilience.Permanent(fmt.Errorf("decode stock response: %w", err))
 		}
-		return parsed.Items, nil
+		return parsed, nil
 
 	case response.StatusCode >= 500 || response.StatusCode == http.StatusTooManyRequests:
-		return nil, fmt.Errorf("stock service returned status %d", response.StatusCode)
+		return productListResponse{}, fmt.Errorf("stock service returned status %d", response.StatusCode)
 
 	default:
-		return nil, resilience.Permanent(rejection(response.StatusCode, body))
+		return productListResponse{}, resilience.Permanent(rejection(response.StatusCode, body))
 	}
 }
 
