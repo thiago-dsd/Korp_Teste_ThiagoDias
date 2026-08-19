@@ -9,6 +9,10 @@ import { ApiError } from 'src/app/core/models/api-error.model';
 import { Product } from 'src/app/core/models/product.model';
 import { InvoiceService } from 'src/app/core/services/invoice.service';
 import { ProductService } from 'src/app/core/services/product.service';
+import { ApiErrorPipe } from 'src/app/core/i18n/api-error.pipe';
+import { translateDraftWarning, translateErrorCode } from 'src/app/core/i18n/error-translation';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
+import { TranslateService } from 'src/app/core/i18n/translate.service';
 
 /** Mirrors the limit the service enforces on the sentence. */
 export const MAX_DRAFT_TEXT_LENGTH = 500;
@@ -28,7 +32,7 @@ interface DraftLine {
  */
 @Component({
   selector: 'app-invoice-new',
-  imports: [ReactiveFormsModule, RouterLink, AngularSvgIconModule],
+  imports: [ReactiveFormsModule, RouterLink, AngularSvgIconModule, TranslatePipe, ApiErrorPipe],
   templateUrl: './invoice-new.component.html',
 })
 export class InvoiceNewComponent implements OnInit {
@@ -37,6 +41,7 @@ export class InvoiceNewComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly formBuilder = inject(FormBuilder);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly i18n = inject(TranslateService);
 
   readonly catalogue = signal<Product[]>([]);
   readonly loadingCatalogue = signal(true);
@@ -123,7 +128,7 @@ export class InvoiceNewComponent implements OnInit {
 
           if (draft.lines.length > 0) {
             this.draftControl.reset('');
-            toast.success(`The assistant added ${draft.lines.length} product(s). Review before creating.`, {
+            toast.success(this.i18n.plural('toasts.assistantAdded', draft.lines.length), {
               position: 'bottom-right',
             });
           }
@@ -192,14 +197,21 @@ export class InvoiceNewComponent implements OnInit {
       .subscribe({
         next: (invoice) => {
           this.saving.set(false);
-          toast.success(`Invoice #${invoice.number} created.`, { position: 'bottom-right' });
+          toast.success(this.i18n.t('toasts.invoiceCreated', { number: invoice.number }), {
+            position: 'bottom-right',
+          });
           void this.router.navigate(['/invoices', invoice.id]);
         },
         error: (error: ApiError) => {
           this.saving.set(false);
           this.saveFailure.set(error);
-          toast.error(error.message, { position: 'bottom-right' });
+          toast.error(translateErrorCode(this.i18n, error.code), { position: 'bottom-right' });
         },
       });
+  }
+
+  /** One of the assistant's own warnings, translated by shape. */
+  draftWarningMessage(warning: string): string {
+    return translateDraftWarning(this.i18n, warning);
   }
 }

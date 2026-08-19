@@ -1,94 +1,147 @@
 <div class="space-y-5">
-  <a routerLink="/invoices" class="text-muted-foreground inline-flex items-center gap-1 text-sm hover:underline">
-    <svg-icon src="assets/icons/heroicons/outline/chevron-double-left.svg" [svgClass]="'h-3 w-3'"></svg-icon>
-    Back to invoices
+  <a routerLink="/invoices" class="action-link text-muted-foreground inline-flex items-center gap-1 text-sm">
+    <svg-icon src="assets/icons/heroicons/solid/chevron-double-left.svg" [svgClass]="'h-3 w-3'"></svg-icon>
+    {{ 'invoiceDetail.back' | t }}
   </a>
 
   @if (loading()) {
-    <p class="text-muted-foreground text-sm">Loading invoice…</p>
+    <p class="text-muted-foreground text-sm">{{ 'common.loading' | t }}</p>
   } @else if (loadFailure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-      <p class="text-destructive font-semibold">{{ error.message }}</p>
+    <div role="alert" class="notice border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
     </div>
   } @else if (invoice(); as invoice) {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-foreground text-xl font-semibold">Invoice #{{ invoice.number }}</h1>
-        <div class="mt-2 flex items-center gap-3">
+        <h1 class="text-foreground text-xl font-semibold">{{ 'invoiceDetail.heading' | t: { number: invoice.number } }}</h1>
+        <!-- The dates used to be repeated here; the timeline below owns them now. -->
+        <div class="mt-2">
           <app-invoice-status [status]="invoice.status" />
-          <span class="text-muted-foreground text-xs">Created {{ invoice.createdAt | date: 'short' }}</span>
-          @if (invoice.printedAt) {
-            <span class="text-muted-foreground text-xs">Printed {{ invoice.printedAt | date: 'short' }}</span>
-          }
         </div>
       </div>
 
-      <button
-        type="button"
-        (click)="print()"
-        [disabled]="!canPrint()"
-        [attr.aria-busy]="printing()"
-        class="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
-        @if (printing()) {
-          <span
-            class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-            aria-hidden="true"></span>
-          Printing…
-        } @else {
-          <svg-icon src="assets/icons/heroicons/outline/download.svg" [svgClass]="'h-4 w-4'"></svg-icon>
-          Print invoice
-        }
-      </button>
-    </div>
-
-    <!-- What is happening with this invoice, in words. -->
-    <div aria-live="polite" class="space-y-3">
-      @if (printing()) {
-        <div class="border-muted bg-card rounded-md border p-4 text-sm">
-          <p class="text-foreground font-semibold">Printing in progress</p>
-          <p class="text-muted-foreground mt-1">
-            The stock service is debiting the balances. The invoice closes as soon as it confirms.
-          </p>
-        </div>
-      }
-
-      @if (invoice.status === 'CLOSED') {
-        <div class="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
-          <p class="font-semibold text-emerald-700">Invoice printed</p>
-          <p class="mt-1 text-emerald-700/80">The quantities below were taken out of the stock balances.</p>
-        </div>
-      }
-
-      @if (invoice.failure; as failure) {
-        <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-          <p class="text-destructive font-semibold">Printing did not go through</p>
-          <p class="text-destructive/90 mt-1">{{ failure.message }}</p>
-          <p class="text-destructive/70 mt-1 text-xs">
-            The invoice is open again, so you can fix the problem and print it once more.
-          </p>
-        </div>
-      }
-
-      @if (printFailure(); as error) {
-        <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-          <p class="text-destructive font-semibold">{{ error.message }}</p>
-          @if (error.isUnavailable) {
-            <p class="text-destructive/70 mt-1 text-xs">Nothing was changed. Try again in a moment.</p>
+      <div class="text-right">
+        <button
+          type="button"
+          (click)="print()"
+          [disabled]="!canPrint()"
+          [attr.aria-busy]="printing()"
+          class="action-solid action-md inline-flex items-center gap-2">
+          @if (printing()) {
+            <span
+              class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"></span>
+            {{ 'invoiceDetail.printing' | t }}
+          } @else {
+            <svg-icon src="assets/icons/heroicons/outline/download.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+            {{ 'invoiceDetail.printInvoice' | t }}
           }
-        </div>
-      }
+        </button>
+        <!-- A greyed out button says "not now"; it does not say why. -->
+        @if (!canPrint() && !printing()) {
+          <p class="text-muted-foreground mt-2 max-w-56 text-xs">
+            {{
+              'invoiceDetail.onlyOpenCanPrint'
+                | t
+                  : {
+                      state:
+                        invoice.status === 'CLOSED' ? ('invoiceDetail.alreadyClosed' | t) : ('invoiceDetail.beingPrinted' | t),
+                    }
+            }}
+          </p>
+        }
+      </div>
     </div>
 
-    <div class="border-muted overflow-x-auto rounded-md border">
+    <!-- What happened to this invoice, in order. -->
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <section class="surface p-4" aria-labelledby="timeline-title">
+        <h2 id="timeline-title" class="text-foreground text-sm font-semibold">{{ 'invoiceDetail.whatHappened' | t }}</h2>
+        <ol class="mt-3 space-y-3" aria-live="polite">
+          @for (entry of timeline(); track entry.title) {
+            <li class="flex gap-3">
+              <span class="mt-1.5 flex h-2.5 w-2.5 shrink-0 items-center justify-center" aria-hidden="true">
+                @if (entry.tone === 'pending') {
+                  <span class="border-amber-500 h-2.5 w-2.5 animate-spin rounded-full border-2 border-t-transparent">
+                  </span>
+                } @else {
+                  <span
+                    class="h-2.5 w-2.5 rounded-full"
+                    [class]="
+                      entry.tone === 'failed'
+                        ? 'bg-destructive'
+                        : entry.tone === 'done'
+                          ? 'bg-emerald-500'
+                          : 'bg-muted-foreground/40'
+                    "></span>
+                }
+              </span>
+              <div class="min-w-0 flex-1">
+                <p
+                  class="text-sm font-medium"
+                  [class]="entry.tone === 'failed' ? 'text-destructive' : 'text-foreground'">
+                  {{ entry.title }}
+                </p>
+                <p class="text-muted-foreground text-xs">{{ entry.detail }}</p>
+                @if (entry.at) {
+                  <p class="text-muted-foreground text-xs">{{ entry.at | localeDate: 'medium' }}</p>
+                }
+              </div>
+            </li>
+          }
+        </ol>
+
+        @if (invoice.failure) {
+          <p class="text-muted-foreground mt-3 text-xs">
+            {{ 'invoiceDetail.failureHint' | t }}
+          </p>
+        }
+      </section>
+
+      <section class="surface p-4" aria-labelledby="details-title">
+        <h2 id="details-title" class="text-foreground text-sm font-semibold">{{ 'invoiceDetail.detailsTitle' | t }}</h2>
+        <dl class="mt-3 space-y-2 text-sm">
+          <div class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">{{ 'invoiceDetail.products' | t }}</dt>
+            <dd class="text-foreground font-medium">{{ invoice.items.length }}</dd>
+          </div>
+          <div class="flex justify-between gap-3">
+            <dt class="text-muted-foreground">{{ 'invoiceDetail.totalQuantity' | t }}</dt>
+            <dd class="text-foreground font-medium">{{ totalQuantity() }}</dd>
+          </div>
+          <div class="flex justify-between gap-3">
+            <dt class="text-muted-foreground whitespace-nowrap">{{ 'invoiceDetail.issuedLabel' | t }}</dt>
+            <dd class="text-foreground font-medium">{{ invoice.createdAt | localeDate: 'short' }}</dd>
+          </div>
+          @if (invoice.printedAt) {
+            <div class="flex justify-between gap-3">
+              <dt class="text-muted-foreground whitespace-nowrap">{{ 'invoiceDetail.printedLabel' | t }}</dt>
+              <dd class="text-foreground font-medium">{{ invoice.printedAt | localeDate: 'short' }}</dd>
+            </div>
+          }
+        </dl>
+      </section>
+    </div>
+
+    @if (printFailure(); as error) {
+      <div role="alert" class="notice border-destructive/40 bg-destructive/10">
+        <p class="text-destructive font-semibold">{{ error | apiError }}</p>
+        @if (error.isUnavailable) {
+          <p class="text-destructive/70 mt-1 text-xs">{{ 'invoiceDetail.nothingChanged' | t }}</p>
+        }
+      </div>
+    }
+
+    <div class="surface scroll-area">
       <table class="w-full text-left text-sm">
         <caption class="sr-only">
-          Products in this invoice
+          {{ 'invoiceDetail.tableCaption' | t }}
         </caption>
         <thead class="bg-card text-muted-foreground text-xs uppercase">
           <tr>
-            <th scope="col" class="px-4 py-3 font-semibold">Code</th>
-            <th scope="col" class="px-4 py-3 font-semibold">Description</th>
-            <th scope="col" class="px-4 py-3 text-right font-semibold">Quantity</th>
+            <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoiceDetail.tableCode' | t }}</th>
+            <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoiceDetail.tableDescription' | t }}</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoiceDetail.tableQuantity' | t }}</th>
           </tr>
         </thead>
         <tbody class="divide-muted divide-y">
@@ -102,7 +155,9 @@
         </tbody>
         <tfoot class="bg-card">
           <tr>
-            <td colspan="2" class="text-muted-foreground px-4 py-3 text-right text-xs uppercase">Total quantity</td>
+            <td colspan="2" class="text-muted-foreground px-4 py-3 text-right text-xs uppercase">
+              {{ 'invoiceDetail.totalQuantityFooter' | t }}
+            </td>
             <td class="text-foreground px-4 py-3 text-right font-semibold">{{ totalQuantity() }}</td>
           </tr>
         </tfoot>

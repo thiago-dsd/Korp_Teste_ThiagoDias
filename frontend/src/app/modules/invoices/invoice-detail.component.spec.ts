@@ -52,6 +52,7 @@ describe('InvoiceDetailComponent', () => {
   }
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [InvoiceDetailComponent],
       providers: [
@@ -107,7 +108,7 @@ describe('InvoiceDetailComponent', () => {
 
     expect(component.canPrint()).toBe(false);
     expect(printButton().disabled).toBe(true);
-    expect(text()).toContain('Invoice printed');
+    expect(text()).toContain('saldos de estoque debitados');
   });
 
   it('should show progress while printing and close the invoice when the stock answers', async () => {
@@ -122,14 +123,14 @@ describe('InvoiceDetailComponent', () => {
     await settle();
 
     expect(component.printing()).toBe(true);
-    expect(text()).toContain('Printing in progress');
+    expect(text()).toContain('aguardando o serviço de estoque');
     expect(printButton().disabled).toBe(true);
 
     await answerNextPoll(invoicePayload('CLOSED', { printed_at: '2026-01-01T01:00:00Z' }));
 
     expect(component.printing()).toBe(false);
     expect(component.invoice()?.status).toBe('CLOSED');
-    expect(text()).toContain('Invoice printed');
+    expect(text()).toContain('saldos de estoque debitados');
   });
 
   it('should explain why printing failed and offer the invoice for another attempt', async () => {
@@ -147,8 +148,8 @@ describe('InvoiceDetailComponent', () => {
     );
 
     expect(component.invoice()?.status).toBe('OPEN');
-    expect(text()).toContain('Printing did not go through');
-    expect(text()).toContain('Product balance is not enough.');
+    expect(text()).toContain('A impressão não foi concluída');
+    expect(text()).toContain('O saldo do produto não é suficiente.');
     expect(component.canPrint()).toBe(true);
     expect(printButton().disabled).toBe(false);
   });
@@ -166,7 +167,7 @@ describe('InvoiceDetailComponent', () => {
 
     expect(component.invoice()?.status).toBe('OPEN');
     expect(component.printFailure()?.isUnavailable).toBe(true);
-    expect(text()).toContain('Nothing was changed');
+    expect(text()).toContain('Nada foi alterado');
   });
 
   it('should refresh the invoice when printing is refused because it is not open', async () => {
@@ -209,6 +210,6 @@ describe('InvoiceDetailComponent', () => {
       );
     await settle();
 
-    expect(text()).toContain('Invoice was not found.');
+    expect(text()).toContain('Nota fiscal não encontrada.');
   });
 });

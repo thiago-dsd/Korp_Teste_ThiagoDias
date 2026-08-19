@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -9,6 +8,11 @@ import { catchError, of, switchMap, tap } from 'rxjs';
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { Invoice } from 'src/app/core/models/invoice.model';
 import { InvoiceService } from 'src/app/core/services/invoice.service';
+import { ApiErrorPipe } from 'src/app/core/i18n/api-error.pipe';
+import { translateErrorCode } from 'src/app/core/i18n/error-translation';
+import { LocaleDatePipe } from 'src/app/core/i18n/intl.pipe';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
+import { TranslateService } from 'src/app/core/i18n/translate.service';
 import { InvoiceStatusComponent } from './invoice-status.component';
 
 /**
@@ -20,13 +24,14 @@ import { InvoiceStatusComponent } from './invoice-status.component';
  */
 @Component({
   selector: 'app-invoice-detail',
-  imports: [RouterLink, DatePipe, AngularSvgIconModule, InvoiceStatusComponent],
+  imports: [RouterLink, AngularSvgIconModule, InvoiceStatusComponent, TranslatePipe, ApiErrorPipe, LocaleDatePipe],
   templateUrl: './invoice-detail.component.html',
 })
 export class InvoiceDetailComponent implements OnInit {
   private readonly invoices = inject(InvoiceService);
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly i18n = inject(TranslateService);
 
   readonly invoice = signal<Invoice | null>(null);
   readonly loading = signal(true);
@@ -40,6 +45,70 @@ export class InvoiceDetailComponent implements OnInit {
   readonly totalQuantity = computed(() =>
     (this.invoice()?.items ?? []).reduce((total, item) => total + item.quantity, 0),
   );
+
+  /**
+   * The life of the invoice as a list of things that happened.
+   *
+   * Printing runs across two services and can fail halfway, so the facts were
+   * scattered over the screen: a date here, a badge there, a red box somewhere
+   * else. Read in order they answer the question the operator actually has,
+   * which is what happened to this document and when.
+   *
+   * Built with {@link TranslateService} directly rather than with translation
+   * keys the template resolves later: `computed()` tracks every signal read
+   * during evaluation, including the ones `t()` makes, so this still
+   * recomputes in the new language the moment the operator switches it.
+   */
+  readonly timeline = computed<TimelineEntry[]>(() => {
+    const invoice = this.invoice();
+    if (!invoice) {
+      return [];
+    }
+
+    const entries: TimelineEntry[] = [
+      {
+        title: this.i18n.t('invoiceDetail.issued'),
+        detail: invoice.issuedBy?.email
+          ? this.i18n.t('invoiceDetail.byEmail', { email: invoice.issuedBy.email })
+          : this.i18n.t('invoiceDetail.authorNotRecorded'),
+        at: invoice.createdAt,
+        tone: 'neutral',
+      },
+    ];
+
+    if (invoice.status === 'PRINTING') {
+      entries.push({
+        title: this.i18n.t('invoiceDetail.printing'),
+        detail: this.i18n.t('invoiceDetail.waitingStock'),
+        at: null,
+        tone: 'pending',
+      });
+    }
+
+    // A failure and a closure are mutually exclusive: an invoice that came
+    // back open carries the reason, and one that closed no longer does.
+    if (invoice.failure) {
+      entries.push({
+        title: this.i18n.t('invoiceDetail.printingFailedTitle'),
+        detail: translateErrorCode(this.i18n, invoice.failure.code),
+        at: invoice.updatedAt,
+        tone: 'failed',
+      });
+    }
+
+    if (invoice.status === 'CLOSED') {
+      entries.push({
+        title: this.i18n.t('invoiceDetail.printed'),
+        detail: invoice.printedBy?.email
+          ? this.i18n.t('invoiceDetail.printingInProgress', { email: invoice.printedBy.email })
+          : this.i18n.t('invoiceDetail.stockDebited'),
+        at: invoice.printedAt,
+        tone: 'done',
+      });
+    }
+
+    return entries;
+  });
 
   ngOnInit(): void {
     this.route.paramMap
@@ -92,7 +161,7 @@ export class InvoiceDetailComponent implements OnInit {
         },
         error: (error: ApiError) => {
           this.printFailure.set(error);
-          toast.error(error.message, { position: 'bottom-right' });
+          toast.error(translateErrorCode(this.i18n, error.code), { position: 'bottom-right' });
 
           // A conflict means the invoice is not open anymore; showing its real
           // state is more useful than the error alone.
@@ -113,11 +182,11 @@ export class InvoiceDetailComponent implements OnInit {
           this.invoice.set(invoice);
 
           if (invoice.status === 'CLOSED') {
-            toast.success(`Invoice #${invoice.number} printed. Stock balances were updated.`, {
+            toast.success(this.i18n.t('toasts.invoicePrinted', { number: invoice.number }), {
               position: 'bottom-right',
             });
           } else if (invoice.status === 'OPEN' && invoice.failure) {
-            toast.error(invoice.failure.message, { position: 'bottom-right' });
+            toast.error(translateErrorCode(this.i18n, invoice.failure.code), { position: 'bottom-right' });
           }
         },
         error: (error: ApiError) => {
@@ -126,4 +195,13 @@ export class InvoiceDetailComponent implements OnInit {
         },
       });
   }
+}
+
+/** One thing that happened to the invoice. */
+export interface TimelineEntry {
+  title: string;
+  detail: string;
+  /** Null while it is still happening. */
+  at: string | null;
+  tone: 'neutral' | 'pending' | 'done' | 'failed';
 }

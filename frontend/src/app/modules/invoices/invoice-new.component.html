@@ -1,52 +1,51 @@
 <div class="space-y-5">
-  <a routerLink="/invoices" class="text-muted-foreground inline-flex items-center gap-1 text-sm hover:underline">
-    <svg-icon src="assets/icons/heroicons/outline/chevron-double-left.svg" [svgClass]="'h-3 w-3'"></svg-icon>
-    Back to invoices
+  <a routerLink="/invoices" class="action-link text-muted-foreground inline-flex items-center gap-1 text-sm">
+    <svg-icon src="assets/icons/heroicons/solid/chevron-double-left.svg" [svgClass]="'h-3 w-3'"></svg-icon>
+    {{ 'invoiceNew.back' | t }}
   </a>
 
   <div>
-    <h1 class="text-foreground text-xl font-semibold">New invoice</h1>
+    <h1 class="text-foreground text-xl font-semibold">{{ 'invoiceNew.title' | t }}</h1>
     <p class="text-muted-foreground mt-1 text-sm">
-      Add the products and their quantities. The invoice is created open and gets its number from the service.
+      {{ 'invoiceNew.subtitle' | t }}
     </p>
   </div>
 
   @if (catalogueFailure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-      <p class="text-destructive font-semibold">{{ error.message }}</p>
-      <p class="text-destructive/70 mt-1 text-xs">Products come from the stock service, which is not answering.</p>
+    <div role="alert" class="notice border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
+      <p class="text-destructive/70 mt-1 text-xs">{{ 'invoiceNew.catalogueUnreachable' | t }}</p>
     </div>
   }
 
   @if (assistantAvailable()) {
     <section
-      class="border-primary/30 bg-primary/5 rounded-md border border-dashed p-4"
+      class="notice border-primary/30 bg-primary/5 border-dashed"
       aria-labelledby="assistant-title">
       <h2 id="assistant-title" class="text-foreground flex items-center gap-2 text-sm font-semibold">
         <svg-icon src="assets/icons/heroicons/outline/cube.svg" [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
-        Describe the invoice
+        {{ 'invoiceNew.assistantTitle' | t }}
       </h2>
       <p class="text-muted-foreground mt-1 text-xs">
-        Write what you are selling in your own words. The assistant matches it against the catalogue and fills the lines
-        below; you review everything before the invoice is created.
+        {{ 'invoiceNew.assistantBody' | t }}
       </p>
 
       <div class="mt-3 flex flex-col gap-2 sm:flex-row">
-        <label for="draft-text" class="sr-only">What are you selling?</label>
+        <label for="draft-text" class="sr-only">{{ 'invoiceNew.assistantInputLabel' | t }}</label>
         <input
           id="draft-text"
           type="text"
           [formControl]="draftControl"
           [attr.maxlength]="maxDraftLength"
           (keydown.enter)="askAssistant()"
-          placeholder="e.g. two steel bolts and a hammer"
-          class="border-muted bg-background text-foreground flex-1 rounded-md border px-3 py-2 text-sm" />
+          [placeholder]="'invoiceNew.assistantPlaceholder' | t"
+          class="flex-1" />
         <button
           type="button"
           (click)="askAssistant()"
           [disabled]="drafting() || draftControl.value.trim().length === 0"
-          class="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60">
-          {{ drafting() ? 'Reading…' : 'Fill with assistant' }}
+          class="action-solid action-md">
+          {{ drafting() ? ('invoiceNew.assistantReading' | t) : ('invoiceNew.assistantFill' | t) }}
         </button>
       </div>
 
@@ -54,13 +53,13 @@
         @if (draftWarnings().length > 0) {
           <ul class="mt-3 space-y-1">
             @for (warning of draftWarnings(); track warning) {
-              <li class="text-xs text-amber-700">{{ warning }}</li>
+              <li class="text-xs text-amber-700">{{ draftWarningMessage(warning) }}</li>
             }
           </ul>
         }
         @if (draftFailure(); as error) {
           <p role="alert" class="text-destructive mt-3 text-xs">
-            {{ error.message }}
+            {{ error | apiError }}
           </p>
         }
       </div>
@@ -70,16 +69,15 @@
   <form
     [formGroup]="lineForm"
     (ngSubmit)="addLine()"
-    class="border-muted grid gap-3 rounded-md border p-4 sm:grid-cols-[1fr_auto_auto]"
+    class="surface grid gap-3 p-4 sm:grid-cols-[1fr_auto_auto]"
     novalidate>
     <div>
-      <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">Product</label>
+      <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">{{ 'invoiceNew.productLabel' | t }}</label>
       <select
         id="line-product"
-        formControlName="productId"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm">
+        formControlName="productId">
         <option value="" disabled>
-          {{ loadingCatalogue() ? 'Loading products…' : 'Select a product' }}
+          {{ loadingCatalogue() ? ('invoiceNew.loadingProducts' | t) : ('invoiceNew.selectProduct' | t) }}
         </option>
         @for (product of available(); track product.id) {
           <option [value]="product.id">{{ product.code }} — {{ product.description }} ({{ product.balance }})</option>
@@ -88,7 +86,7 @@
     </div>
 
     <div>
-      <label for="line-quantity" class="text-foreground mb-1 block text-sm font-medium">Quantity</label>
+      <label for="line-quantity" class="text-foreground mb-1 block text-sm font-medium">{{ 'invoiceNew.quantityLabel' | t }}</label>
       <input
         id="line-quantity"
         type="number"
@@ -96,38 +94,38 @@
         step="1"
         inputmode="numeric"
         formControlName="quantity"
-        class="border-muted bg-background text-foreground w-24 rounded-md border px-3 py-2 text-sm" />
+        class="w-24" />
     </div>
 
     <div class="flex items-end">
       <button
         type="submit"
         [disabled]="available().length === 0"
-        class="border-muted text-foreground w-full rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
-        Add product
+        class="action-outline action-md w-full">
+        {{ 'invoiceNew.addProduct' | t }}
       </button>
     </div>
   </form>
 
-  <div class="border-muted overflow-x-auto rounded-md border">
+  <div class="surface scroll-area">
     <table class="w-full text-left text-sm">
       <caption class="sr-only">
-        Products added to this invoice
+        {{ 'invoiceNew.tableCaption' | t }}
       </caption>
       <thead class="bg-card text-muted-foreground text-xs uppercase">
         <tr>
-          <th scope="col" class="px-4 py-3 font-semibold">Code</th>
-          <th scope="col" class="px-4 py-3 font-semibold">Description</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold">Quantity</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold">In stock</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">Actions</span></th>
+          <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoiceNew.tableCode' | t }}</th>
+          <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoiceNew.tableDescription' | t }}</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoiceNew.tableQuantity' | t }}</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoiceNew.tableInStock' | t }}</th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">{{ 'invoiceNew.actionsLabel' | t }}</span></th>
         </tr>
       </thead>
       <tbody class="divide-muted divide-y">
         @if (lines().length === 0) {
           <tr>
             <td colspan="5" class="text-muted-foreground px-4 py-8 text-center">
-              No products yet. An invoice needs at least one.
+              {{ 'invoiceNew.emptyLines' | t }}
             </td>
           </tr>
         } @else {
@@ -147,9 +145,9 @@
                 <button
                   type="button"
                   (click)="removeLine(line.product.id)"
-                  class="text-destructive text-xs font-semibold"
-                  [attr.aria-label]="'Remove ' + line.product.code + ' from the invoice'">
-                  Remove
+                  class="action-link text-destructive text-xs font-semibold"
+                  [attr.aria-label]="'invoiceNew.removeAria' | t: { code: line.product.code }">
+                  {{ 'invoiceNew.remove' | t }}
                 </button>
               </td>
             </tr>
@@ -160,28 +158,28 @@
   </div>
 
   @if (linesOverBalance().length > 0) {
-    <div role="alert" class="rounded-md border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
-      <p class="font-semibold text-amber-700">Some quantities are above the current balance</p>
+    <div role="alert" class="notice border-amber-500/40 bg-amber-500/10">
+      <p class="font-semibold text-amber-700">{{ 'invoiceNew.overBalanceTitle' | t }}</p>
       <p class="mt-1 text-amber-700/80">
-        The invoice can still be created, but printing it will be refused until the stock is replenished.
+        {{ 'invoiceNew.overBalanceBody' | t }}
       </p>
     </div>
   }
 
   @if (saveFailure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-      <p class="text-destructive font-semibold">{{ error.message }}</p>
+    <div role="alert" class="notice border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
     </div>
   }
 
   <div class="flex items-center justify-between gap-3">
-    <p class="text-muted-foreground text-sm">Total quantity: {{ totalQuantity() }}</p>
+    <p class="text-muted-foreground text-sm">{{ 'invoiceNew.totalQuantity' | t: { total: totalQuantity() } }}</p>
     <button
       type="button"
       (click)="save()"
       [disabled]="lines().length === 0 || saving()"
-      class="bg-primary text-primary-foreground rounded-md px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60">
-      {{ saving() ? 'Creating…' : 'Create invoice' }}
+      class="action-solid action-md">
+      {{ saving() ? ('invoiceNew.creating' | t) : ('invoiceNew.createInvoice' | t) }}
     </button>
   </div>
 </div>

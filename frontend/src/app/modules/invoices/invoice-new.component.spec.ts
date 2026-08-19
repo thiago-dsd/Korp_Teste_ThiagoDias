@@ -25,6 +25,7 @@ describe('InvoiceNewComponent', () => {
   }
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [InvoiceNewComponent],
       providers: [
@@ -97,7 +98,7 @@ describe('InvoiceNewComponent', () => {
     fixture.detectChanges();
 
     expect(component.lines().length).toBe(0);
-    expect(text()).toContain('No products yet');
+    expect(text()).toContain('Ainda não há produtos');
   });
 
   it('should warn when a quantity is above the balance without blocking the invoice', async () => {
@@ -107,7 +108,7 @@ describe('InvoiceNewComponent', () => {
     addLine('p-2', 5);
 
     expect(component.linesOverBalance().length).toBe(1);
-    expect(text()).toContain('above the current balance');
+    expect(text()).toContain('acima do saldo atual');
   });
 
   it('should create the invoice and open it', async () => {
@@ -153,7 +154,7 @@ describe('InvoiceNewComponent', () => {
     fixture.detectChanges();
 
     expect(component.saving()).toBe(false);
-    expect(text()).toContain('The stock service is unavailable.');
+    expect(text()).toContain('O serviço de estoque está indisponível.');
   });
 
   it('should explain when the catalogue cannot be loaded', async () => {
@@ -161,7 +162,7 @@ describe('InvoiceNewComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('could not be reached');
+    expect(text()).toContain('Não foi possível contatar o serviço.');
   });
 });
 
@@ -217,7 +218,7 @@ describe('InvoiceNewComponent with the assistant', () => {
 
   it('should offer the assistant when the service has it configured', () => {
     expect(component.assistantAvailable()).toBe(true);
-    expect(text()).toContain('Describe the invoice');
+    expect(text()).toContain('Descreva a nota fiscal');
   });
 
   it('should fill the lines with what the assistant suggests', async () => {
@@ -247,7 +248,7 @@ describe('InvoiceNewComponent with the assistant', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('was not recognised as a product');
+    expect(text()).toContain('não foi reconhecido como um produto');
   });
 
   it('should add to the lines the operator already had', async () => {
@@ -277,7 +278,7 @@ describe('InvoiceNewComponent with the assistant', () => {
     fixture.detectChanges();
 
     expect(component.drafting()).toBe(false);
-    expect(text()).toContain('The assistant is unavailable right now.');
+    expect(text()).toContain('O assistente está indisponível no momento.');
     // Adding products by hand still works.
     component.lineForm.setValue({ productId: 'p-1', quantity: 1 });
     component.addLine();

@@ -1,7 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap') layer(base);
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap')
+layer(base);
 
 @import 'tailwindcss';
-
 
 /** Plugins **/
 @import './assets/styles/apexchart.css';
@@ -42,8 +42,9 @@
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
 
-  @keyframes wiggle {
+  --color-brand: var(--brand);
 
+  @keyframes wiggle {
     0%,
     100% {
       transform: rotate(-3deg);
@@ -132,7 +133,6 @@
   color utility to any element that depends on these defaults.
 */
 @layer base {
-
   *,
   ::after,
   ::before,
@@ -145,120 +145,129 @@
 @utility dropdown-content {
   @apply pointer-events-none scale-95 opacity-0 duration-100 ease-in;
 
-  .dropdown:hover>& {
+  .dropdown:hover > & {
     @apply pointer-events-auto block scale-100 animate-fade-in-up opacity-100 duration-200;
   }
 }
 
 @utility dropdown {
-  &:hover>.dropdown-content {
+  &:hover > .dropdown-content {
     @apply pointer-events-auto block scale-100 animate-fade-in-up opacity-100 duration-200;
   }
 }
 
 @layer base {
   :root {
-    --background: #FFFFFF;
-    --foreground: #0C1420;
-    --card: #F1F5F9;
+    /*
+     * The brand red of the Korp mark, and the one colour on this page that is
+     * not a theme. `--primary` is a preference — the operator can turn the
+     * whole app violet or green from the profile menu — so the logo must not
+     * be painted with it. Deliberately absent from `.dark` and from every
+     * `[data-theme]` block below: a logo that changes colour is a different
+     * logo.
+     */
+    --brand: #f12d2d;
+
+    --background: #ffffff;
+    --foreground: #0c1420;
+    --card: #f1f5f9;
     --card-foreground: #000000;
-    --primary: #E11D48;
-    --primary-foreground: #FFFFFF;
-    --muted: #CFD9E5;
-    --muted-foreground: #64748B;
-    --destructive: #CC0033;
-    --destructive-foreground: #FAFAFA;
-    --border: #E2E8F0;
+    --primary: #e11d48;
+    --primary-foreground: #ffffff;
+    --muted: #cfd9e5;
+    --muted-foreground: #64748b;
+    --destructive: #cc0033;
+    --destructive-foreground: #fafafa;
+    --border: #e2e8f0;
   }
 
   .dark {
-    --background: #0A0A0A;
-    --foreground: #F2F2F2;
+    --background: #0a0a0a;
+    --foreground: #f2f2f2;
     --card: #121212;
     --card-foreground: #262626;
     --muted: #262626;
-    --muted-foreground: #A3A3A3;
+    --muted-foreground: #a3a3a3;
     --border: #262626;
   }
 
   :root[data-theme='violet'] {
-    --primary: #6E56CF;
+    --primary: #6e56cf;
   }
 
   .dark[data-theme='violet'] {
     --background: #060815;
-    --foreground: #F6F8FB;
-    --card: #0B0F1A;
-    --card-foreground: #F6F8FB;
-    --primary-foreground: #F6F8FB;
-    --muted: #232B3D;
-    --muted-foreground: #A1A8BF;
-    --border: #232B3D;
+    --foreground: #f6f8fb;
+    --card: #0b0f1a;
+    --card-foreground: #f6f8fb;
+    --primary-foreground: #f6f8fb;
+    --muted: #232b3d;
+    --muted-foreground: #a1a8bf;
+    --border: #232b3d;
   }
 
   :root[data-theme='red'] {
-    --primary: #CC0033;
+    --primary: #cc0033;
   }
 
   .dark[data-theme='red'] {
-    --primary-foreground: #FFE5E5;
+    --primary-foreground: #ffe5e5;
   }
 
   :root[data-theme='blue'] {
-    --primary: #2490FF;
+    --primary: #2490ff;
   }
 
   .dark[data-theme='blue'] {
-    --background: #02080F;
-    --foreground: #F8FAFC;
-    --card: #0B1117;
-    --card-foreground: #F8FAFC;
-    --primary-foreground: #0F1729;
-    --muted: #1E293B;
-    --muted-foreground: #94A3B8;
-    --border: #1E293B;
+    --background: #02080f;
+    --foreground: #f8fafc;
+    --card: #0b1117;
+    --card-foreground: #f8fafc;
+    --primary-foreground: #0f1729;
+    --muted: #1e293b;
+    --muted-foreground: #94a3b8;
+    --border: #1e293b;
   }
 
   :root[data-theme='orange'] {
-    --primary: #EA580C;
+    --primary: #ea580c;
   }
 
   .dark[data-theme='orange'] {
-    --background: #0C0A09;
-    --foreground: #FAFAF9;
+    --background: #0c0a09;
+    --foreground: #fafaf9;
     --card: #141110;
-    --card-foreground: #FAFAF9;
-    --primary-foreground: #FAFAF9;
+    --card-foreground: #fafaf9;
+    --primary-foreground: #fafaf9;
     --muted: #292524;
-    --muted-foreground: #A8A29E;
+    --muted-foreground: #a8a29e;
     --border: #292524;
   }
 
   :root[data-theme='yellow'] {
-    --primary: #FACC15;
+    --primary: #facc15;
   }
 
   .dark[data-theme='yellow'] {
-    --background: #0C0A09;
-    --foreground: #FAFAF9;
+    --background: #0c0a09;
+    --foreground: #fafaf9;
     --card: #141110;
-    --card-foreground: #FAFAF9;
-    --primary: #FACC15;
+    --card-foreground: #fafaf9;
+    --primary: #facc15;
     --primary-foreground: #422006;
     --muted: #292524;
-    --muted-foreground: #A8A29E;
+    --muted-foreground: #a8a29e;
     --border: #292524;
   }
 
   :root[data-theme='green'] {
-    --primary: #22C55E;
+    --primary: #22c55e;
   }
 
   .dark[data-theme='green'] {
-    --primary: #22C55E;
-    --primary-foreground: #052E16;
+    --primary: #22c55e;
+    --primary-foreground: #052e16;
   }
-
 }
 
 /** Scroll bar **/
@@ -268,26 +277,279 @@
   }
 }
 
-/** Custom Forms **/
-[type='text'],
-[type='email'],
-[type='url'],
-[type='password'],
-[type='number'],
+/**
+ * Custom Forms
+ *
+ * A field looks like a field because it is one, not because each template
+ * remembers to say so. Every screen used to repeat
+ * `border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm`
+ * on every input — twenty copies of one decision, already drifting from this
+ * rule underneath it (`text-sm` against `text-xs`, `border-muted` against
+ * `border-border`). The padding and the type scale live here now, so a
+ * template only says what is particular to it: a width, or room for an icon.
+ *
+ * It sits in `components`, between the two things it has to beat and lose to:
+ * after the forms plugin's own base reset (which zeroes the radius), and
+ * before the utilities layer, so `w-24` on a quantity box and `pl-9` on a
+ * search field still win. Unlayered — where this rule used to be — outranks
+ * every layer, and those two overrides silently did nothing.
+ */
+@layer components {
+  [type='text'],
+  [type='email'],
+  [type='url'],
+  [type='password'],
+  [type='number'],
+  [type='date'],
+  [type='datetime-local'],
+  [type='month'],
+  [type='search'],
+  [type='tel'],
+  [type='time'],
+  [type='week'],
+  [multiple],
+  textarea,
+  select {
+    @apply w-full rounded-md border border-muted bg-background px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:z-10 focus:border-primary focus:outline-hidden focus:ring-primary;
+  }
+
+  [type='checkbox'],
+  [type='radio'] {
+    @apply h-4 w-4 rounded-sm border-border bg-background checked:border-primary checked:bg-primary indeterminate:border-primary indeterminate:bg-primary focus:ring-2 focus:ring-primary;
+  }
+}
+/**
+ * Interactive affordances
+ *
+ * Everything the user can click says so, in one place instead of once per template:
+ * the pointer cursor, the keyboard focus ring and the colour transition. Templates
+ * only pick a role below (`action-solid`, `action-outline`, …) and their own sizing.
+ */
+
+/* `a` without a destination is decorative (the logo, for one), so it stays a plain cursor. */
+a[href],
+a[routerLink],
+button,
+summary,
+[role='button'],
+[type='checkbox'],
+[type='radio'],
 [type='date'],
 [type='datetime-local'],
 [type='month'],
-[type='search'],
-[type='tel'],
 [type='time'],
 [type='week'],
-[multiple],
-textarea,
+[type='file'],
 select {
-  @apply w-full rounded-md border border-border bg-background text-xs text-foreground placeholder-muted-foreground focus:z-10 focus:border-primary focus:outline-hidden focus:ring-primary;
+  cursor: pointer;
 }
 
-[type='checkbox'],
-[type='radio'] {
-  @apply h-4 w-4 rounded-sm border-border bg-background checked:border-primary checked:bg-primary indeterminate:border-primary indeterminate:bg-primary focus:ring-2 focus:ring-primary;
+/* The calendar and clock pickers are a button inside the field, whatever the field's own cursor. */
+::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
+/* Listed last so it wins over the rules above for the same element. */
+button:disabled,
+select:disabled,
+textarea:disabled,
+input:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+a[href]:focus-visible,
+a[routerLink]:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+[role='button']:focus-visible,
+[type='checkbox']:focus-visible,
+[type='radio']:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+a[href],
+a[routerLink],
+button,
+[role='button'] {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: 150ms;
+}
+
+/** Interactive roles: the colour and the state feedback. Size stays with the element. **/
+
+@utility action-solid {
+  @apply bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80 disabled:opacity-40 disabled:saturate-50 disabled:hover:bg-primary;
+}
+
+@utility action-danger {
+  @apply bg-destructive text-primary-foreground hover:bg-destructive/90 active:bg-destructive/80 disabled:opacity-40 disabled:saturate-50 disabled:hover:bg-destructive;
+}
+
+@utility action-outline {
+  @apply border-muted text-foreground hover:bg-card hover:border-muted-foreground/40 active:bg-muted/40 border disabled:opacity-60 disabled:hover:bg-transparent;
+}
+
+/**
+ * The two sizes an action comes in.
+ *
+ * Picked apart by hand, the buttons had drifted across four horizontal
+ * paddings, three vertical ones and two type sizes — `px-5 py-2.5` next to
+ * `px-3 py-2` for the same kind of action. A role above says what a button
+ * means; these say how big it is, and there are deliberately only two.
+ */
+@utility action-md {
+  @apply rounded-md px-4 py-2.5 text-sm font-semibold;
+}
+
+/* Dense rows: filters, table chrome, the buttons inside a dialog's footer. */
+@utility action-sm {
+  @apply rounded-md px-3 py-1.5 text-xs font-semibold;
+}
+
+/*
+ * A toggle that is off: same shape as the one that is on, so only the colour
+ * reads as state.
+ *
+ * It carries a border because the card colour sits a couple of percent away
+ * from the page background in dark mode — enough to disappear entirely, which
+ * left three of the filters reading as plain text rather than as controls.
+ */
+@utility action-quiet {
+  @apply bg-card text-muted-foreground border-muted hover:bg-muted hover:text-foreground active:bg-muted border;
+}
+
+@utility action-selected {
+  @apply bg-primary text-primary-foreground border-primary hover:bg-primary/90 active:bg-primary/80 border;
+}
+
+@utility action-danger-selected {
+  @apply bg-destructive text-primary-foreground border-destructive hover:bg-destructive/90 active:bg-destructive/80 border;
+}
+
+/**
+ * Surfaces: the panels a screen is built out of.
+ *
+ * The shell paints the page `bg-card` and every panel `bg-background`, so
+ * depth comes from that contrast rather than from a shadow. The border is
+ * still needed — in dark mode the two colours sit a couple of percent apart,
+ * the same reason `action-quiet` carries one — but at full strength it drew
+ * harder than the content inside it, so it is softened here.
+ *
+ * The radius says how big a thing is: `surface` wraps a whole panel,
+ * `rounded-md` belongs to the controls inside it, `pill` to the badges. The
+ * screens had flattened all three to `rounded-md`, which left a table card
+ * and a button reading as the same kind of object.
+ */
+@utility surface {
+  @apply bg-background border-muted/60 rounded-lg border;
+}
+
+/* A panel nested inside another one, where a second solid border would stack. */
+@utility surface-inset {
+  @apply border-muted/60 rounded-md border border-dashed;
+}
+
+/**
+ * A tinted box that says something happened: an error, a warning, an all-clear.
+ *
+ * Only the shape lives here. The tone stays at the call site, because which
+ * colour a notice carries is what the screen is actually saying —
+ * `notice border-destructive/40 bg-destructive/10` reads as one thought.
+ */
+@utility notice {
+  @apply rounded-lg border p-4 text-sm;
+}
+
+/* The same notice where the space is tight: a dropdown, or inside a dialog. */
+@utility notice-tight {
+  @apply rounded-lg border p-3 text-sm;
+}
+
+/**
+ * A scroll box that keeps the shell's scrollbar.
+ *
+ * `<main>`, the sidebar and the mobile menu all render a thin, rounded,
+ * transparent-track scrollbar; the four table containers had plain
+ * `overflow-x-auto` and so showed the browser's default one instead — the same
+ * app drawing two different scrollbars depending on which box you were in.
+ */
+@utility scroll-area {
+  overflow-x: auto;
+
+  /* Spelled out rather than `@apply scrollbar-*`: those are plugin utilities,
+     which `@apply` cannot resolve. Same result as the shell's scrollbar. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: transparent;
+    border-radius: 9999px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--muted);
+    border-radius: 9999px;
+  }
+}
+
+/** A status badge: one shape for every one of them. */
+@utility pill {
+  @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+}
+
+/*
+ * Text-only actions: nothing but the label, so the underline has to carry the affordance.
+ * The opacity shift covers the ones that are underlined already, where the underline alone
+ * would say nothing on hover.
+ */
+@utility action-link {
+  @apply underline-offset-2 hover:underline hover:opacity-80 active:opacity-70 disabled:opacity-60 disabled:hover:no-underline;
+}
+
+/*
+ * The page itself never scrolls sideways.
+ *
+ * The layout is a full height shell whose only scroller is <main>, so a
+ * horizontal scrollbar on the root is always a mistake. It appeared anyway on
+ * the listing screens: a table wider than a phone sits in its own
+ * overflow-x-auto box, body stays 390px wide, and the root still reported the
+ * table's full width and let the whole page be dragged sideways. Clamping the
+ * root states what the layout already intends, and leaves every inner scroll
+ * area working.
+ */
+html {
+  overflow-x: hidden;
+}
+
+/**
+ * Component hosts that hold a page.
+ *
+ * An Angular host element is an unknown tag, so the browser lays it out as
+ * inline. For a badge that is right; for the element wrapping a whole screen
+ * it is not — an inline box does not contain a block descendant properly, and
+ * a table wider than a phone leaked past its scroll container and made the
+ * whole page drag sideways. The badges below are deliberately left inline.
+ */
+app-root,
+app-layout,
+app-home,
+app-products,
+app-invoices,
+app-invoice-detail,
+app-invoice-new,
+app-product-form,
+app-product-import,
+app-product-movements,
+app-bulk-result,
+app-modal,
+app-auth {
+  display: block;
 }

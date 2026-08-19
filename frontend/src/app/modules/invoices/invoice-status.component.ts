@@ -1,13 +1,14 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 
 import { InvoiceStatus } from 'src/app/core/models/invoice.model';
+import { TranslateService } from 'src/app/core/i18n/translate.service';
 
 /** Shows the state of an invoice as a badge, with a spinner while printing. */
 @Component({
   selector: 'app-invoice-status',
   template: `
     <span
-      class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold"
+      class="pill"
       [class]="styles()"
       role="status">
       @if (status() === 'PRINTING') {
@@ -20,16 +21,18 @@ import { InvoiceStatus } from 'src/app/core/models/invoice.model';
   `,
 })
 export class InvoiceStatusComponent {
+  private readonly i18n = inject(TranslateService);
+
   readonly status = input.required<InvoiceStatus>();
 
   readonly label = computed(() => {
     switch (this.status()) {
       case 'OPEN':
-        return 'Open';
+        return this.i18n.t('invoiceStatus.open');
       case 'PRINTING':
-        return 'Printing';
+        return this.i18n.t('invoiceStatus.printing');
       case 'CLOSED':
-        return 'Closed';
+        return this.i18n.t('invoiceStatus.closed');
     }
   });
 
