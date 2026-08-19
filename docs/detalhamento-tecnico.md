@@ -178,8 +178,8 @@ rota, autenticação → papel → limite da categoria.
 Também não há ORM. O SQL é escrito à mão porque as consultas que importam aqui não são as que um
 ORM gera bem: `UPDATE ... WHERE balance >= $2` que recusa saldo negativo no próprio banco,
 `FOR UPDATE SKIP LOCKED` no outbox, `ON CONFLICT (consumer, message_id) DO NOTHING` para
-reconhecer uma mensagem reentregue,
-paginação por _keyset_, `unnest` para inserir os itens de uma nota em uma ida ao banco.
+reconhecer uma mensagem reentregue, paginação por _keyset_, e `unnest` para inserir os itens de uma
+nota em uma ida só ao banco.
 
 Migrações são versionadas e aplicadas pelo próprio serviço no _start_, com _advisory lock_ (só uma
 instância migra) e uma transação por migração.
