@@ -1,4 +1,4 @@
-# Invoice System
+# Stockly
 
 Invoice issuing system built for the Korp technical challenge: product registration,
 invoice creation with sequential numbering, and invoice printing that closes the invoice and
@@ -43,8 +43,24 @@ balances — the operations that rewrite what invoices are made of. The role tra
 signed token, so each service enforces it without asking identity on every request, and a refusal
 answers `403` rather than `401`: signing in again fixes one and cannot fix the other.
 
-The first account created administers the system, because one where nobody can manage the
-catalogue could never be set up in the first place.
+> **Temporary: every account registers as an administrator.**
+>
+> The rule this replaces is the right one — the first account administers the system, because one
+> where nobody can manage the catalogue could never be set up in the first place, and everybody
+> after it is an operator. What is missing is the other half: there is no way to grant the role
+> afterwards. Whoever registers second is locked out of registering a product, with no path back
+> short of an `UPDATE` on the database, which makes the system impossible to demonstrate from a
+> clean clone.
+>
+> Registering everyone as an administrator is the smaller wrong while that half is missing. It is
+> one line in `CreateUser` (`internal/identity/store.go`), the original is written just above it,
+> and **nothing else was weakened**: `RequireRole(RoleAdmin)` still guards every catalogue
+> endpoint, the role still travels in the signed token, and an operator still gets a `403`. Only
+> the role handed out at registration changed.
+>
+> The fix is user management — an administrator promoting and demoting others — after which this
+> line goes back to what it was and the test `TestEveryAccountRegistersAsAdministrator` goes back
+> to asserting that only the first account administers.
 
 Passwords are stored as argon2id hashes. Refresh tokens are stored hashed and rotated on every
 use: replaying one that was already exchanged revokes the whole session, which is what limits the
@@ -76,8 +92,82 @@ created by the regular endpoint, after the person reviews the lines. A sentence 
 model into ignoring its instructions therefore cannot reach the stock: the rules are enforced
 after the answer comes back, not by the prompt.
 
-Set `AZURE_AI_FOUNDRY_ENDPOINT`, `AZURE_AI_FOUNDRY_API_KEY` and `AZURE_AI_FOUNDRY_DEPLOYMENT` to
-enable it. Without them the screen does not offer the assistant and invoices are written by hand.
+### Searching for invoices by writing
+
+The listing screen takes a question in plain words — *"notas fechadas de agosto com martelo"* — and
+answers with **filters, not invoices**. `POST /invoices/search` returns a filter set; the screen
+writes it into the controls above the table and into the URL, and the ordinary listing endpoint
+reads it from there.
+
+That indirection is the whole design. What the assistant understood is visible on screen, editable
+by hand, survives a reload and can be sent to a colleague as a link — none of which is true of an
+answer produced directly by a model.
+
+Two things guard it. The filters go through `ParseQuery`, the same function that reads a hand-typed
+query string, so **a filter the listing would reject is a filter the assistant cannot produce**. And
+a product is resolved against the real catalogue, because the listing matches a product code
+exactly and an invented one would quietly return an empty page instead of an answer.
+
+One bad filter drops itself rather than the whole question: asking for open invoices in a month the
+model spelled wrong still narrows to the open ones, and says what it left out.
+
+#### Turning it on
+
+The assistant is off unless it is configured, and it says so rather than failing: `GET
+/invoices/draft` answers `{"available": false}`, the new-invoice screen does not render the field
+at all, and invoices are written by hand. Nothing else degrades.
+
+It needs a chat deployment reachable over the classic Azure OpenAI API — `POST
+{endpoint}/openai/deployments/{deployment}/chat/completions`, authenticated with an `api-key`
+header. Put the three values in a `.env` file at the root of the repository, which `docker compose`
+reads and `.gitignore` already excludes:
+
+```
+AZURE_AI_FOUNDRY_ENDPOINT=https://<account>.openai.azure.com
+AZURE_AI_FOUNDRY_API_KEY=<key>
+AZURE_AI_FOUNDRY_DEPLOYMENT=<deployment name>
+AZURE_AI_FOUNDRY_API_VERSION=2024-10-21
+```
+
+Then `docker compose --profile services up -d billing-service` to pick them up.
+
+Provisioning the smallest thing that works, from scratch:
+
+```sh
+az provider register -n Microsoft.CognitiveServices   # new subscriptions need this
+
+az group create -n rg-stockly-ai -l eastus2
+
+az cognitiveservices account create -n <globally-unique-name> -g rg-stockly-ai -l eastus2 \
+  --kind OpenAI --sku S0 --custom-domain <globally-unique-name> --yes
+
+az cognitiveservices account deployment create -n <name> -g rg-stockly-ai \
+  --deployment-name gpt-4o --model-name gpt-4o --model-version 2024-11-20 \
+  --model-format OpenAI --sku-name Standard --sku-capacity 10
+
+az cognitiveservices account show -n <name> -g rg-stockly-ai --query properties.endpoint -o tsv
+az cognitiveservices account keys list -n <name> -g rg-stockly-ai --query key1 -o tsv
+```
+
+No Key Vault, storage account or Foundry hub: the service talks to the endpoint directly with a
+key, so anything else would be cost without use. `S0` has no standing charge and a Standard
+deployment bills per token, so an idle environment costs nothing. `az group delete -n
+rg-stockly-ai --yes` removes all of it.
+
+**Choosing the model matters more than it looks.** The client sends `temperature` and `max_tokens`
+and asks for `response_format: json_object`. The reasoning models (`o1`, `o3`, `gpt-5`) reject
+`temperature` and expect `max_completion_tokens` instead, so they fail against this client without
+a code change. `gpt-4o-mini` would be the cheaper pick but its only version, `2024-07-18`, was
+deprecated on 2026-03-31 and Azure refuses new deployments of it. `gpt-4o` is the cheapest model
+that both takes these parameters and still has Standard quota.
+
+Check quota before provisioning — a fresh subscription often has none for a given model in a given
+region:
+
+```sh
+az cognitiveservices usage list -l eastus2 \
+  --query "[?contains(name.value,'Standard.gpt-4o')].{quota:name.value, limit:limit}" -o table
+```
 
 ### Listings
 
@@ -112,6 +202,32 @@ Filters combine freely and are applied by the database, never in memory:
 
 An unusable filter is refused with `400 invalid_filter` naming every offending field at once, and
 the listing keeps its filters while paging.
+
+On the screens the filters live in the query string, so a filtered listing survives a reload, walks
+back with the browser, and can be sent to a colleague as a link — `/products?stock=low` and
+`/invoices?attention=true` are what the dashboard tiles point at. Either listing exports what is on
+screen, filters included, as a CSV.
+
+### Stock history
+
+A balance answers how much there is; it cannot answer why. `GET /products/{id}/movements` returns
+the changes to one product, newest first, paged by cursor like every other listing:
+
+```
+GET /products/{id}/movements   ->  { "items": [ { "delta": -3, "balance_after": 7,
+                                                  "source": "invoice", ... } ], "next_cursor": "" }
+```
+
+Every change writes a row: the opening balance a product is registered with, a correction typed on
+the form, a delivery or a stock count, and stock taken by an invoice being printed. The row is
+written **in the same transaction as the balance change it describes**, so the history can never
+disagree with the balance it explains — a refused adjustment leaves no trace, and a print request
+delivered twice records one movement, for the same reason it debits once.
+
+A movement caused by a person keeps their address; one caused by an invoice points at the invoice,
+which already records who printed it. Nothing here is ever updated or deleted: a correction is
+another movement. Products registered before this existed simply have no history, and the screen
+says so rather than claiming nothing ever moved.
 
 ### Rate limiting
 
@@ -165,10 +281,12 @@ below zero, and products are touched in the same order the debit of an invoice u
 adjustment and a print cannot deadlock each other. Repeating a delivery note is stopped by the
 usual `Idempotency-Key`.
 
-Printing and adjusting are offered on the screens: invoices are picked from the listing and
-printed together, and products are picked and moved in one document. What was applied leaves the
-selection and what was refused stays, with the reason next to it, so the operator corrects and
-sends again. Importing a catalogue is API only.
+All three are offered on the screens. Invoices are picked from the listing and printed together;
+products are picked and moved in one document; and a catalogue is imported by pasting rows from a
+spreadsheet, which is the only way a real catalogue ever gets in. The paste accepts comma,
+semicolon and tab, ignores a header row, and shows what it understood before anything is written.
+What was applied leaves the selection and what was refused stays, with the reason next to it, so
+the operator corrects and sends again.
 
 Every call takes at most 100 items and answers with the same shape: whether the items stand or
 fall together, a count to read first, and one compact line per item carrying its position, what
@@ -275,6 +393,52 @@ cd frontend && npm run lint    # ESLint with the Angular and accessibility rules
 
 Integration tests are skipped when `TEST_DATABASE_URL` is not set, so the unit suite runs
 anywhere.
+
+## Screens
+
+| Screen | What it is for |
+| --- | --- |
+| **Today** | What needs attention before anything else gets printed: invoices that failed, invoices still open, what is out of stock and what is running out. Each number links to the listing already filtered for it. |
+| **Products** | The catalogue, with a balance read as a state rather than a number — out, running low, fine. Register one, correct one, import a whole catalogue, move balances in one document, and read why any balance is what it is. |
+| **Invoices** | Every invoice and its state, filtered by status, number, period, product or "needs attention", and printed in batches. |
+| **Invoice** | One document: what happened to it, in order, with who issued it and who printed it, and the button that prints it. |
+
+The landing page used to explain what the application is for, which is worth reading exactly once.
+An operator opening this system already knows; what they do not know is which invoices failed
+overnight and what is about to run out, and both were three clicks and two filters away.
+
+Nothing counts the whole table to fill a tile: the listings are paged by cursor and carry no total
+on purpose, so a full page is reported as `20+` rather than as `20`. Each panel is read
+independently, and one service being slow leaves that panel empty and says so, instead of leaving
+the page blank.
+
+## The mark
+
+The Korp initial: a circle set against an angular stem, with the counter between them left open so
+the background reads through it. It comes from `logo-initial.svg` and is used unchanged — same path,
+same proportions. It is a single silhouette with one counter, which is what lets it hold together
+small, and why there is no separate small-size variant to keep in step.
+
+Two rules. **Size it by height and let the width follow** (the viewBox is 1129 × 1125, very nearly
+but not exactly square — constraining both turns the circle into an ellipse). **Give it no padding
+of its own**: the empty top-left and bottom-right corners are part of the drawing and already
+provide the breathing room.
+
+Its red is `--brand: #f12d2d`, which is deliberately *not* `--primary`. The primary colour is a
+preference — the operator can turn the whole application violet or green from the profile menu —
+and a logo that changes colour with a theme is a different logo. This is also why the mark no longer
+sits on a `bg-primary` tile in the navigation: on a rose theme it disappeared into the tile, and on
+a blue one it fought with it. It now stands in brand red directly on the surface, and reverses to
+white only where it sits on a filled panel (the favicon, the sign in artwork).
+
+| File | Use |
+| --- | --- |
+| `src/assets/icons/logo.svg` | The mark, in `currentColor`. Everywhere in the interface — sidebar, navbar and sign in. |
+| `src/favicon.svg` | The mark reversed to white on a brand-red tile. A bare silhouette on transparency does not hold against both a light and a dark browser chrome. |
+| `src/favicon.ico` | 16, 32 and 48, each rendered at its own pixel size rather than downsampled, for browsers that ignore SVG favicons. |
+| `src/apple-touch-icon.png` | 180×180, square and opaque: iOS applies its own rounded mask, and transparent corners come out black. |
+| `src/assets/brand/logo-512.png` | 512×512 master, for anything outside the application. |
+| `src/assets/brand/logo-initial.svg` | The mark as delivered, untouched. Everything above is derived from it. |
 
 ## Layout
 

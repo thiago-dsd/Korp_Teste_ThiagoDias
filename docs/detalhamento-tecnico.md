@@ -14,9 +14,9 @@ vida. Por isso os que aparecem no código são poucos e cada um tem uma razão c
 
 | Ciclo de vida | Onde | Por quê |
 |---|---|---|
-| `ngOnInit` | telas de produtos, notas, detalhe da nota, formulários | Ponto em que os _streams_ de busca e recarga são montados. Não fica no construtor porque montar assinaturas ali dificulta o teste e roda antes de os `input()` estarem disponíveis. |
-| `ngOnDestroy` | `ClickOutsideDirective`, `MenuService` | Os dois guardam recursos que o Angular não recolhe sozinho: um ouvinte de evento no `document` e uma assinatura de longa duração. |
-| `ngAfterViewInit` | `ClickOutsideDirective`, `NavbarSubmenuComponent` | Precisam do elemento já renderizado para medir/ouvir. |
+| `ngOnInit` | telas de produtos, notas, detalhe da nota, dashboard, formulários, painel de histórico | Ponto em que os _streams_ de busca e recarga são montados. Não fica no construtor porque montar assinaturas ali dificulta o teste e roda antes de os `input()` estarem disponíveis — o painel de histórico provou isso na prática: lendo `product()` no construtor, o Angular acusa `NG0950`, porque um `input.required` ainda não tem valor nesse momento. |
+| `ngOnDestroy` | `ClickOutsideDirective`, `MenuService`, `ModalComponent` | Os três guardam recursos que o Angular não recolhe sozinho: um ouvinte de evento no `document`, uma assinatura de longa duração e, no diálogo, a rolagem travada do `body` e o foco que precisa voltar para onde estava. |
+| `ngAfterViewInit` | `ClickOutsideDirective`, `NavbarSubmenuComponent`, `ModalComponent` | Precisam do elemento já renderizado para medir, ouvir ou receber foco. |
 
 **O que substituiu os demais**, e é a parte que merece atenção:
 
@@ -48,7 +48,7 @@ existe estado, não há Observable; onde existe uma sequência de acontecimentos
 menos código do que qualquer alternativa.
 
 Operadores em uso: `debounceTime`, `distinctUntilChanged`, `switchMap`, `startWith`, `catchError`,
-`tap`, `map`, `of`, `throwError`, `finalize`, `shareReplay`, `takeWhile`, `timer`,
+`tap`, `map`, `of`, `throwError`, `finalize`, `shareReplay`, `takeWhile`, `timer`, `forkJoin`,
 `firstValueFrom`, `Subject`, `Subscription`, `toSignal`, `takeUntilDestroyed`.
 
 Os três usos que justificam a biblioteca:
@@ -63,6 +63,17 @@ digitação.
 `timer(intervalo, intervalo)` + `switchMap(() => this.get(id))` + `takeWhile(status === 'PRINTING',
 true)` consulta a nota até ela sair de PRINTING e **completa entregando a nota final** como última
 emissão. O `true` no `takeWhile` é o detalhe que faz o resultado final chegar ao assinante.
+
+**Filtros vindos da URL** (`products.component.ts`, `invoices.component.ts`) — a query string é a
+fonte da verdade do que está na tela. `route.queryParamMap` → `map` para um estado →
+`distinctUntilChanged` → `switchMap(() => this.fetch())`. Os controles não recarregam a lista: eles
+navegam, e a navegação volta por esse mesmo _stream_. O `distinctUntilChanged` é o que impede o
+laço, já que escrever na URL reemite o parâmetro.
+
+**Painéis independentes do dashboard** (`home.component.ts`) — `forkJoin` de quatro listagens, cada
+uma com o seu próprio `catchError` que degrada para página vazia. O `catchError` fica **dentro** do
+`forkJoin`, não fora: fora dele, um serviço lento derrubaria os quatro painéis e a tela ficaria em
+branco em vez de mostrar o que deu para ler.
 
 **Renovação de sessão** (`auth.service.ts` + `auth.interceptor.ts`) — quando o token expira com
 várias requisições em voo, todas precisam esperar **uma única** renovação. O `AuthService` mantém a
@@ -106,7 +117,16 @@ estruturado (`log/slog`), concorrência — vem da biblioteca padrão.
 ### Bibliotecas de componentes visuais
 
 **Nenhuma.** Não há Angular Material, PrimeNG ou similar. A interface é construída com Tailwind e
-componentes próprios (`app-button`, `app-bulk-result`, `app-invoice-status`, `app-product-form`).
+componentes próprios (`app-modal`, `app-bulk-result`, `app-invoice-status`, `app-stock-level`,
+`app-product-form`, `app-product-import`, `app-product-movements`).
+
+O que uma biblioteca costuma dar de graça está resolvido em dois lugares e não espalhado pelos
+_templates_: `app-modal` concentra o que faz um diálogo ser um diálogo (Escape, foco inicial, foco
+devolvido ao fechar, rolagem travada atrás), e um punhado de _utilities_ `action-*` em `styles.css`
+concentra cor e estado de cada papel de ação — sólida, destrutiva, contornada, alternador ligado e
+desligado, ação só-texto —, deixando no elemento apenas tamanho e forma. Antes disso a mesma
+sequência de classes estava repetida em catorze _templates_, e três telas equivalentes tinham três
+comportamentos de `hover` diferentes.
 
 O motivo é específico deste sistema: as telas são poucas e o comportamento delas é o que importa —
 seleção que sobrevive à paginação, painel que mostra sucesso parcial, formulário que preserva o que
@@ -233,8 +253,17 @@ Registradas por honestidade, com o que cada uma custaria:
 
 - **Testes end-to-end (Playwright) escritos e não executados na suíte.** Os binários instalados na
   máquina são de uma build diferente da que o `playwright-core` do projeto procura; `npx playwright
-  install` resolve. Os fluxos foram verificados manualmente em navegador real (Chromium),
-  incluindo recusa atômica de ajuste e impressão em lote.
+  install` resolve. Os fluxos foram verificados em navegador real dirigindo o Chrome instalado por
+  `executablePath` — inclusive a revisão visual tela a tela, que encontrou quatro defeitos que os
+  testes unitários não pegam: um ícone inexistente pedido pelos links de voltar, filtros desligados
+  invisíveis no tema escuro, um botão desabilitado que ainda lia como disponível, e o campo de
+  busca colapsando em um quadrado no telefone.
+- **Estoque baixo é um limiar único** (5), não um ponto de reposição por produto. O catálogo não
+  tem esse campo, e acrescentar um que ninguém mantém seria pior do que um número legível por
+  todos; passa a valer a pena quando os produtos tiverem giros muito diferentes.
+- **O histórico de estoque começa na migração `0008`.** Produtos registrados antes não têm
+  movimentos, e a tela diz isso em vez de afirmar que nada se moveu. Reconstruir o passado não é
+  possível: os débitos antigos guardam apenas o `invoice_id`, não as quantidades.
 - **16 avisos de acessibilidade** no _layout_ herdado do template (menus que abrem por clique sem
   equivalente de teclado). As regras ficaram ligadas como aviso em vez de desligadas, para que a
   dívida continue contada; `ng lint` passa sem erros e roda no CI.

@@ -1,4 +1,4 @@
-# Invoice System — frontend
+# Stockly — frontend
 
 Angular application of the invoice system: product registration, invoice creation and printing.
 It talks to two services: stock (`:8081`) and billing (`:8082`).
