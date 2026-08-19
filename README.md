@@ -332,36 +332,77 @@ Load scenarios, measured results, the one optimisation the data justified and th
 catch regressions are in [docs/performance.md](docs/performance.md). The load generator lives in
 `backend/cmd/loadgen`.
 
-## Requirements
+## Running it
 
-- Go 1.26+
-- Node.js 22+ and npm
-- Docker (PostgreSQL and RabbitMQ)
-
-## Getting started
+You need **Docker** and **Node.js 22+**. Everything else runs in containers.
 
 ```bash
-cp .env.example .env     # development defaults, adjust if needed
-make infra-up            # PostgreSQL on :5433 and RabbitMQ on :5672 (UI on :15672)
-make run-identity        # identity-service on :8083
-make run-stock           # stock-service on :8081
-make run-billing         # billing-service on :8082
-cd frontend && npm install && npm start   # Angular app on :4200
+git clone https://github.com/thiago-dsd/Korp_Teste_ThiagoDias.git
+cd Korp_Teste_ThiagoDias
+
+make services-up                          # database, broker and the three services
+cd frontend && npm install && npm start   # the app, on http://localhost:4200
 ```
 
-Services apply their own database migrations at startup.
+The first command builds three images and starts them with PostgreSQL and RabbitMQ. Each service
+creates and migrates its own database on startup, so there is nothing to seed by hand. It takes a
+couple of minutes the first time and seconds after that.
 
-To run everything in containers instead, without a Go toolchain on the machine:
+Then open <http://localhost:4200> and **create an account** — registration is open, and the account
+can register products right away.
+
+A first pass through the system, in the order the challenge describes it:
+
+1. **Products → New product.** Code, description and balance — say `MART-01`, a hammer, 10 units.
+2. **Invoices → New invoice.** Pick the product, quantity 2, and create it. It gets a sequential
+   number and opens as `OPEN`.
+3. **Print it.** The status goes to `PRINTING` while the stock service is asked, then to `CLOSED`.
+4. **Back to Products.** The balance is now 8.
+
+Everything answers on these ports:
+
+| | |
+| --- | --- |
+| App | <http://localhost:4200> |
+| Stock service | <http://localhost:8081> |
+| Billing service | <http://localhost:8082> |
+| Identity service | <http://localhost:8083> |
+| RabbitMQ management | <http://localhost:15672> — `korp` / `korp` |
+| PostgreSQL | `localhost:5433` — `korp` / `korp` |
+
+`make services-down` stops everything and keeps the data. `make infra-reset` throws the databases
+away and starts over.
+
+### Turning on the assistants
+
+The two AI features are off until a model is configured, and the screens simply do not offer them.
+To switch them on, put an Azure AI Foundry deployment in a `.env` file at the root — the format and
+the `az` commands that provision one are under
+[Writing an invoice with the assistant](#writing-an-invoice-with-the-assistant) above — and run
+`make services-up` again.
+
+Nothing else needs a `.env`: the compose file carries the development defaults, and the services
+migrate and start without one.
+
+### Working on the backend
+
+To run the Go services on the host instead of in containers, with **Go 1.26+** installed:
 
 ```bash
-make services-up      # builds the three images and starts them with the infrastructure
+make infra-up        # only PostgreSQL and RabbitMQ, in containers
+make run-identity    # :8083
+make run-stock       # :8081
+make run-billing     # :8082
 ```
+
+Each in its own terminal. The Makefile passes the configuration inline, so there is still no `.env`
+to prepare.
 
 The services build from one multi-stage `backend/Dockerfile` parameterised by which command to
 compile, and run as a non-root user from a ~30 MB image with nothing in it but the static binary
-and the certificates needed to reach the AI endpoint. The Angular app still runs with `npm start`,
-because its API URLs are baked in at build time and pointing them at containers is a deployment
-decision rather than a development one.
+and the certificates needed to reach the AI endpoint. The Angular app runs with `npm start` either
+way, because its API URLs are baked in at build time and pointing them at containers is a
+deployment decision rather than a development one.
 
 ## Tests
 
