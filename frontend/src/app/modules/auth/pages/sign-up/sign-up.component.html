@@ -1,18 +1,17 @@
 <form class="my-10 space-y-6" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
   <div class="text-center">
-    <h2 class="text-foreground mb-1 text-3xl font-semibold">Create your account</h2>
-    <p class="text-muted-foreground text-sm">You need an account to issue invoices.</p>
+    <h2 class="text-foreground mb-1 text-3xl font-semibold">{{ 'auth.signUp.title' | t }}</h2>
+    <p class="text-muted-foreground text-sm">{{ 'auth.signUp.subtitle' | t }}</p>
   </div>
 
   <div class="space-y-4 text-left">
     <div>
-      <label for="name" class="text-foreground mb-1 block text-sm font-medium">Full name</label>
+      <label for="name" class="text-foreground mb-1 block text-sm font-medium">{{ 'auth.signUp.nameLabel' | t }}</label>
       <input
         id="name"
         type="text"
         formControlName="name"
         autocomplete="name"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
         [attr.aria-invalid]="errorFor('name') ? 'true' : null" />
       @if (errorFor('name'); as message) {
         <p class="text-destructive mt-1 text-xs">{{ message }}</p>
@@ -20,13 +19,12 @@
     </div>
 
     <div>
-      <label for="email" class="text-foreground mb-1 block text-sm font-medium">Email address</label>
+      <label for="email" class="text-foreground mb-1 block text-sm font-medium">{{ 'auth.signUp.emailLabel' | t }}</label>
       <input
         id="email"
         type="email"
         formControlName="email"
         autocomplete="email"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
         [attr.aria-invalid]="errorFor('email') ? 'true' : null" />
       @if (errorFor('email'); as message) {
         <p class="text-destructive mt-1 text-xs">{{ message }}</p>
@@ -34,7 +32,7 @@
     </div>
 
     <div>
-      <label for="password" class="text-foreground mb-1 block text-sm font-medium">Password</label>
+      <label for="password" class="text-foreground mb-1 block text-sm font-medium">{{ 'auth.signUp.passwordLabel' | t }}</label>
       <div class="relative">
         <input
           id="password"
@@ -42,19 +40,23 @@
           formControlName="password"
           autocomplete="new-password"
           [attr.minlength]="minPasswordLength"
-          class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 pr-20 text-sm"
+          class="pr-10"
           [attr.aria-invalid]="errorFor('password') ? 'true' : null"
           aria-describedby="password-hint" />
         <button
           type="button"
           (click)="togglePasswordVisibility()"
-          class="text-muted-foreground absolute inset-y-0 right-2 text-xs font-semibold"
-          [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'">
-          {{ showPassword() ? 'Hide' : 'Show' }}
+          class="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md focus-visible:outline-hidden focus-visible:ring-1"
+          [attr.aria-label]="showPassword() ? ('auth.signIn.hide' | t) : ('auth.signIn.show' | t)"
+          [attr.aria-pressed]="showPassword()"
+          [title]="showPassword() ? ('auth.signIn.hide' | t) : ('auth.signIn.show' | t)">
+          <svg-icon
+            [src]="showPassword() ? 'assets/icons/heroicons/outline/eye-off.svg' : 'assets/icons/heroicons/outline/eye.svg'"
+            [svgClass]="'h-5 w-5'"></svg-icon>
         </button>
       </div>
       <p id="password-hint" class="text-muted-foreground mt-1 text-xs">
-        At least {{ minPasswordLength }} characters. A passphrase of a few words works well.
+        {{ 'auth.signUp.passwordHint' | t: { min: minPasswordLength } }}
       </p>
       @if (errorFor('password'); as message) {
         <p class="text-destructive mt-1 text-xs">{{ message }}</p>
@@ -63,20 +65,20 @@
   </div>
 
   @if (failure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-3 text-sm">
-      <p class="text-destructive">{{ error.message }}</p>
+    <div role="alert" class="notice-tight border-destructive/40 bg-destructive/10">
+      <p class="text-destructive">{{ error | apiError }}</p>
     </div>
   }
 
   <button
     type="submit"
     [disabled]="submitting()"
-    class="bg-primary text-primary-foreground w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60">
-    {{ submitting() ? 'Creating account…' : 'Create account' }}
+    class="action-solid action-md w-full">
+    {{ submitting() ? ('auth.signUp.submitting' | t) : ('auth.signUp.submit' | t) }}
   </button>
 
   <p class="text-muted-foreground text-center text-sm">
-    Already have an account?
-    <a routerLink="/auth/sign-in" class="text-primary font-semibold">Sign in</a>
+    {{ 'auth.signUp.alreadyHaveAccount' | t }}
+    <a routerLink="/auth/sign-in" class="action-link text-primary font-semibold">{{ 'auth.signUp.signIn' | t }}</a>
   </p>
 </form>

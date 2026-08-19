@@ -1,11 +1,11 @@
 import { Component, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
-import { ButtonComponent } from 'src/app/shared/components/button/button.component';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-error404',
-  imports: [AngularSvgIconModule, ButtonComponent],
+  imports: [AngularSvgIconModule, TranslatePipe],
   templateUrl: './error404.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './error404.component.css',

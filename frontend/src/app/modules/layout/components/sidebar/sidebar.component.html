@@ -8,13 +8,19 @@
       class="mx-4 mb-2 flex h-9 items-center">
       @if (menuService.showSideBar) {
         <div class="flex items-center">
+          <!--
+            The mark stands in the brand red rather than in a tile: the tile was
+            `bg-primary`, which the operator can turn violet or green, and a red
+            logo inside it either clashed or vanished. It is still the sidebar
+            toggle, so it keeps a hover surface — a neutral one.
+          -->
           <a
             (click)="toggleSidebar()"
-            class="bg-primary flex cursor-pointer items-center justify-center rounded-sm p-2 focus:outline-hidden focus:ring-1">
-            <svg-icon src="assets/icons/logo.svg"> </svg-icon>
+            class="hover:bg-card flex cursor-pointer items-center justify-center rounded-md p-1.5 focus:outline-hidden focus:ring-1">
+            <svg-icon src="assets/icons/logo.svg" [svgClass]="'text-brand h-6 w-auto'"> </svg-icon>
           </a>
-          <b class="text-foreground ps-2 ml-1 grow text-sm font-bold">
-            {{ appJson.displayName }}
+          <b class="text-foreground ps-2 ml-1 grow text-sm font-bold leading-tight">
+            {{ 'app.name' | t }}
           </b>
         </div>
       }
@@ -42,14 +48,14 @@
       </svg-icon>
 
       <div class="ml-3 truncate text-[10px] font-semibold tracking-wide focus:outline-hidden">
-        <span class="bg-primary/10 text-primary px-2 font-semibold">v{{ appJson.version }}</span>
+        <span class="bg-primary/10 text-primary px-2 font-semibold">v{{ appVersion }}</span>
       </div>
 
       @if (!menuService.showSideBar) {
         <div class="fixed w-full">
           <span
             class="z-1 bg-foreground text-background absolute left-12 -top-4 w-auto min-w-max origin-left scale-0 p-2 text-xs font-bold shadow-md transition-all duration-200 group-hover:scale-100">
-            v{{ appJson.version }}
+            v{{ appVersion }}
           </span>
         </div>
       }

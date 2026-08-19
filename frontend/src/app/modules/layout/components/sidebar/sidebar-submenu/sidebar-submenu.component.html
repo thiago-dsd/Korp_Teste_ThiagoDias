@@ -5,7 +5,7 @@
     class="border-border text-muted-foreground flex flex-col border-dashed ltr:border-l ltr:pl-2 rtl:border-r rtl:pr-2">
     @for (sub of submenu.children; track sub) {
       <li>
-        <div class="text-muted-foreground hover:text-primary relative flex" (click)="toggleMenu(sub)">
+        <div class="text-muted-foreground hover:text-primary relative flex cursor-pointer" (click)="toggleMenu(sub)">
           <!-- Condition -->
           <ng-container
             [ngTemplateOutlet]="sub.children ? childMenu : parentMenu"
@@ -18,7 +18,7 @@
               routerLinkActive="text-primary"
               [routerLinkActiveOptions]="{ exact: true }"
               class="hover:bg-card inline-block w-full rounded-lg px-4 py-2 text-xs">
-              {{ sub.label }}
+              {{ sub.label | t }}
             </a>
             @if (menuService.isActive(sub.route)) {
               <span
@@ -29,7 +29,7 @@
           <!-- Child Menu -->
           <ng-template #childMenu let-sub="sub">
             <a class="inline-block w-full cursor-pointer px-4 py-2 text-xs">
-              {{ sub.label }}
+              {{ sub.label | t }}
             </a>
             <button
               [ngClass]="{ hidden: !menuService.showSideBar }"

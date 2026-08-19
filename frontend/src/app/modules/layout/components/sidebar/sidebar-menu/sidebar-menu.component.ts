@@ -5,13 +5,14 @@ import { AngularSvgIconModule } from 'angular-svg-icon';
 import { SubMenuItem } from 'src/app/core/models/menu.model';
 import { MenuService } from '../../../services/menu.service';
 import { SidebarSubmenuComponent } from '../sidebar-submenu/sidebar-submenu.component';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-sidebar-menu',
   templateUrl: './sidebar-menu.component.html',
   styleUrls: ['./sidebar-menu.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, AngularSvgIconModule, NgTemplateOutlet, RouterLink, RouterLinkActive, SidebarSubmenuComponent],
+  imports: [NgClass, AngularSvgIconModule, NgTemplateOutlet, RouterLink, RouterLinkActive, SidebarSubmenuComponent, TranslatePipe],
 })
 export class SidebarMenuComponent {
   menuService = inject(MenuService);

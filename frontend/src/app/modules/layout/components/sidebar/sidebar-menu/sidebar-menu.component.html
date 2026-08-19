@@ -3,7 +3,7 @@
     @if (menuService.showSideBar) {
       <div class="mx-1 flex items-center justify-between py-3">
         <small [ngClass]="{ hidden: !menuService.showSideBar }" class="text-muted-foreground/50 text-xs font-semibold">
-          {{ menu.group }}
+          {{ menu.group | t }}
         </small>
       </div>
     }
@@ -18,7 +18,7 @@
               'hover:bg-primary/10': !menuService.showSideBar && item.active,
               'hover:bg-card/50': !menuService.showSideBar,
             }"
-            class="text-muted-foreground hover:text-foreground group relative flex grow items-center gap-4 rounded-lg px-2">
+            class="text-muted-foreground hover:text-foreground group relative flex grow cursor-pointer items-center gap-4 rounded-lg px-2">
             <!-- Icon -->
             <div [ngClass]="item.active && !menuService.showSideBar ? 'text-primary' : 'text-muted-foreground/50'">
               <svg-icon src="{{ item.icon }}" [svgClass]="'h-5 w-5'"> </svg-icon>
@@ -37,7 +37,7 @@
                   [ngClass]="{ hidden: !menuService.showSideBar }"
                   routerLinkActive="text-primary"
                   class="truncate text-xs font-semibold tracking-wide focus:outline-hidden">
-                  {{ item.label }}
+                  {{ item.label | t }}
                 </a>
               </div>
             </ng-template>
@@ -47,7 +47,7 @@
                 <a
                   [ngClass]="{ hidden: !menuService.showSideBar }"
                   class="text-muted-foreground group-hover:text-primary truncate text-xs font-semibold tracking-wide focus:outline-hidden">
-                  {{ item.label }}
+                  {{ item.label | t }}
                 </a>
               </div>
             </ng-template>
@@ -68,7 +68,7 @@
               <div class="z-1 fixed h-[36px]">
                 <span
                   class="z-1 bg-foreground text-background absolute w-auto min-w-max translate-y-[2px] scale-0 rounded-md p-2 text-xs font-bold shadow-md transition-all duration-200 group-hover:scale-100 ltr:origin-left ltr:translate-x-10 rtl:origin-right rtl:-translate-x-10">
-                  {{ item.label }}
+                  {{ item.label | t }}
                 </span>
               </div>
             }

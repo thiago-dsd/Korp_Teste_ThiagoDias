@@ -1,64 +1,67 @@
 <form class="my-10 space-y-6" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
   <div class="text-center">
-    <h2 class="text-foreground mb-1 text-3xl font-semibold">Welcome back</h2>
-    <p class="text-muted-foreground text-sm">Sign in to manage products and invoices.</p>
+    <h2 class="text-foreground mb-1 text-3xl font-semibold">{{ 'auth.signIn.title' | t }}</h2>
+    <p class="text-muted-foreground text-sm">{{ 'auth.signIn.subtitle' | t }}</p>
   </div>
 
   <div class="space-y-4 text-left">
     <div>
-      <label for="email" class="text-foreground mb-1 block text-sm font-medium">Email address</label>
+      <label for="email" class="text-foreground mb-1 block text-sm font-medium">{{ 'auth.signIn.emailLabel' | t }}</label>
       <input
         id="email"
         type="email"
         formControlName="email"
         autocomplete="email"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm"
         [attr.aria-invalid]="form.controls.email.touched && form.controls.email.invalid ? 'true' : null"
         [attr.aria-describedby]="form.controls.email.touched && form.controls.email.invalid ? 'email-error' : null" />
       @if (form.controls.email.touched && form.controls.email.invalid) {
-        <p id="email-error" class="text-destructive mt-1 text-xs">Enter a valid email address.</p>
+        <p id="email-error" class="text-destructive mt-1 text-xs">{{ 'auth.signIn.invalidEmail' | t }}</p>
       }
     </div>
 
     <div>
-      <label for="password" class="text-foreground mb-1 block text-sm font-medium">Password</label>
+      <label for="password" class="text-foreground mb-1 block text-sm font-medium">{{ 'auth.signIn.passwordLabel' | t }}</label>
       <div class="relative">
         <input
           id="password"
           [type]="showPassword() ? 'text' : 'password'"
           formControlName="password"
           autocomplete="current-password"
-          class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 pr-20 text-sm"
+          class="pr-10"
           [attr.aria-invalid]="form.controls.password.touched && form.controls.password.invalid ? 'true' : null" />
         <button
           type="button"
           (click)="togglePasswordVisibility()"
-          class="text-muted-foreground absolute inset-y-0 right-2 text-xs font-semibold"
-          [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'">
-          {{ showPassword() ? 'Hide' : 'Show' }}
+          class="text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md focus-visible:outline-hidden focus-visible:ring-1"
+          [attr.aria-label]="showPassword() ? ('auth.signIn.hide' | t) : ('auth.signIn.show' | t)"
+          [attr.aria-pressed]="showPassword()"
+          [title]="showPassword() ? ('auth.signIn.hide' | t) : ('auth.signIn.show' | t)">
+          <svg-icon
+            [src]="showPassword() ? 'assets/icons/heroicons/outline/eye-off.svg' : 'assets/icons/heroicons/outline/eye.svg'"
+            [svgClass]="'h-5 w-5'"></svg-icon>
         </button>
       </div>
       @if (form.controls.password.touched && form.controls.password.invalid) {
-        <p class="text-destructive mt-1 text-xs">Enter your password.</p>
+        <p class="text-destructive mt-1 text-xs">{{ 'auth.signIn.passwordRequired' | t }}</p>
       }
     </div>
   </div>
 
   @if (failure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-3 text-sm">
-      <p class="text-destructive">{{ error.message }}</p>
+    <div role="alert" class="notice-tight border-destructive/40 bg-destructive/10">
+      <p class="text-destructive">{{ error | apiError }}</p>
     </div>
   }
 
   <button
     type="submit"
     [disabled]="submitting()"
-    class="bg-primary text-primary-foreground w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60">
-    {{ submitting() ? 'Signing in…' : 'Sign in' }}
+    class="action-solid action-md w-full">
+    {{ submitting() ? ('auth.signIn.submitting' | t) : ('auth.signIn.submit' | t) }}
   </button>
 
   <p class="text-muted-foreground text-center text-sm">
-    No account yet?
-    <a routerLink="/auth/sign-up" class="text-primary font-semibold">Create one</a>
+    {{ 'auth.signIn.noAccount' | t }}
+    <a routerLink="/auth/sign-up" class="action-link text-primary font-semibold">{{ 'auth.signIn.createOne' | t }}</a>
   </p>
 </form>

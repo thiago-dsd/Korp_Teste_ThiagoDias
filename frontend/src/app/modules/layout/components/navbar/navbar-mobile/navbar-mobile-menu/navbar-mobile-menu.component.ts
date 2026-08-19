@@ -5,6 +5,7 @@ import { AngularSvgIconModule } from 'angular-svg-icon';
 import { SubMenuItem } from 'src/app/core/models/menu.model';
 import { MenuService } from 'src/app/modules/layout/services/menu.service';
 import { NavbarMobileSubmenuComponent } from '../navbar-mobile-submenu/navbar-mobile-submenu.component';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-navbar-mobile-menu',
@@ -18,6 +19,7 @@ import { NavbarMobileSubmenuComponent } from '../navbar-mobile-submenu/navbar-mo
     RouterLink,
     RouterLinkActive,
     NavbarMobileSubmenuComponent,
+    TranslatePipe,
   ],
 })
 export class NavbarMobileMenuComponent {

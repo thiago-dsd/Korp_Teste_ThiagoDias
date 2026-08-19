@@ -8,7 +8,7 @@
           type="button"
           class="bg-muted text-muted-foreground focus:ring-primary hover:bg-muted-foreground hover:text-muted inline-flex items-center justify-center rounded-md p-2 focus:outline-hidden focus:ring-2 focus:ring-inset"
           aria-expanded="false">
-          <span class="sr-only">Open menu</span>
+          <span class="sr-only">{{ 'layout.openMenu' | t }}</span>
           <!-- Heroicon name: outline/menu -->
           <svg-icon src="assets/icons/heroicons/outline/menu.svg" [svgClass]="'h-6 w-6'"> </svg-icon>
         </button>
@@ -16,16 +16,18 @@
 
       <!-- Logo -->
       <div class="flex items-center justify-start gap-3 sm:order-2 ltr:md:mr-10 rtl:md:ml-10 lg:hidden">
-        <a class="bg-primary flex items-center justify-center rounded-sm p-2 focus:outline-hidden focus:ring-1">
-          <svg-icon src="assets/icons/logo.svg"></svg-icon>
-        </a>
-        <b class="text-foreground hidden text-sm font-bold sm:block"> Invoice System </b>
+        <span class="flex items-center justify-center">
+          <svg-icon src="assets/icons/logo.svg" [svgClass]="'text-brand h-8 w-auto'"></svg-icon>
+        </span>
+        <b class="text-foreground hidden text-sm font-bold leading-tight sm:block">{{ 'app.name' | t }}</b>
       </div>
 
-      <!-- Desktop Menu -->
-      <div class="hidden space-x-10 sm:order-3 md:flex">
-        <app-navbar-menu></app-navbar-menu>
-      </div>
+      <!--
+        The desktop navigation lives in the sidebar, which is always visible on
+        this breakpoint. Repeating it here as a dropdown of menu group names
+        offered the same three pages twice, and named them after a group
+        ("Invoicing") rather than after anywhere you can go.
+      -->
 
       <!-- Profile menu -->
       <div class="items-center justify-end sm:order-4 md:flex md:flex-1 lg:w-0">

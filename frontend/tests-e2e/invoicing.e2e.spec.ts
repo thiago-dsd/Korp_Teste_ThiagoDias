@@ -8,6 +8,12 @@ import { expect, test } from '@playwright/test';
  */
 const runId = Date.now().toString(36).toUpperCase();
 
+// These assertions are written in English; pin the locale so a pt-BR default
+// in the app itself never turns this suite into a false failure.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+});
+
 test('registers a product, issues an invoice and prints it', async ({ page }) => {
   const code = `E2E-${runId}`;
 

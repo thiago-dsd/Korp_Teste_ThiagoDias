@@ -1,15 +1,15 @@
 import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { Event, NavigationEnd, Router, RouterOutlet } from '@angular/router';
-import { FooterComponent } from './components/footer/footer.component';
 import { NavbarComponent } from './components/navbar/navbar.component';
 import { SidebarComponent } from './components/sidebar/sidebar.component';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
 
 @Component({
   selector: 'app-layout',
   templateUrl: './layout.component.html',
   styleUrls: ['./layout.component.css'],
   changeDetection: ChangeDetectionStrategy.Eager,
-  imports: [SidebarComponent, NavbarComponent, RouterOutlet, FooterComponent],
+  imports: [SidebarComponent, NavbarComponent, RouterOutlet, TranslatePipe],
 })
 export class LayoutComponent implements OnInit {
   private router = inject(Router);

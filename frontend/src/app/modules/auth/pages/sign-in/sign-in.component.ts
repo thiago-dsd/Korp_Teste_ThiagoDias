@@ -5,6 +5,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AngularSvgIconModule } from 'angular-svg-icon';
 
 import { ApiError } from 'src/app/core/models/api-error.model';
+import { ApiErrorPipe } from 'src/app/core/i18n/api-error.pipe';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
 import { AuthService } from 'src/app/core/services/auth.service';
 
 /** Sign in screen. */
@@ -12,7 +14,7 @@ import { AuthService } from 'src/app/core/services/auth.service';
   selector: 'app-sign-in',
   templateUrl: './sign-in.component.html',
   styleUrls: ['./sign-in.component.css'],
-  imports: [ReactiveFormsModule, RouterLink, AngularSvgIconModule],
+  imports: [ReactiveFormsModule, RouterLink, AngularSvgIconModule, TranslatePipe, ApiErrorPipe],
 })
 export class SignInComponent {
   private readonly auth = inject(AuthService);
