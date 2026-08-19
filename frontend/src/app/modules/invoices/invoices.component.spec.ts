@@ -145,10 +145,12 @@ describe('InvoicesComponent', () => {
 
     component.questionControl.setValue('notas abertas');
     component.askAssistant();
-    http.expectOne(`${invoicesUrl}/search`).flush(
-      { error: { code: 'ai_unavailable', message: 'The assistant is unavailable right now.' } },
-      { status: 503, statusText: 'Service Unavailable' },
-    );
+    http
+      .expectOne(`${invoicesUrl}/search`)
+      .flush(
+        { error: { code: 'ai_unavailable', message: 'The assistant is unavailable right now.' } },
+        { status: 503, statusText: 'Service Unavailable' },
+      );
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -210,9 +212,11 @@ describe('InvoicesComponent', () => {
     expect(component.hasPrinting()).toBe(true);
 
     await waitForPoll();
-    http.expectOne((request) => request.url === invoicesUrl).flush({
-      items: [invoicePayload('i-1', 1, 'CLOSED')],
-    });
+    http
+      .expectOne((request) => request.url === invoicesUrl)
+      .flush({
+        items: [invoicePayload('i-1', 1, 'CLOSED')],
+      });
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -230,9 +234,11 @@ describe('InvoicesComponent', () => {
 
     await waitForPoll();
     expect(component.loading()).toBe(false);
-    http.expectOne((request) => request.url === invoicesUrl).flush({
-      items: [invoicePayload('i-1', 1, 'CLOSED')],
-    });
+    http
+      .expectOne((request) => request.url === invoicesUrl)
+      .flush({
+        items: [invoicePayload('i-1', 1, 'CLOSED')],
+      });
     await fixture.whenStable();
   });
 

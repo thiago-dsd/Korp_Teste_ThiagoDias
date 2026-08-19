@@ -50,32 +50,45 @@ const EXACT_FIELD_FRAGMENTS: Record<string, string> = {
 };
 
 /** Backend sentences that carry a number or an id, matched and re-templated. */
-const FIELD_PATTERNS: { pattern: RegExp; key: string; params: (match: RegExpMatchArray) => Record<string, string> }[] = [
-  { pattern: /^must have at least (\d+) characters$/, key: 'errors.fragments.minLength', params: (m) => ({ count: m[1] }) },
-  { pattern: /^must have at most (\d+) characters$/, key: 'errors.fragments.maxLength', params: (m) => ({ count: m[1] }) },
-  {
-    pattern: /^must be a number between 1 and (\d+)$/,
-    key: 'errors.fragments.numberBetween',
-    params: (m) => ({ max: m[1] }),
-  },
-  {
-    pattern: /^already sent at position (\d+)$/,
-    key: 'errors.fragments.alreadySentAt',
-    params: (m) => ({ position: m[1] }),
-  },
-  {
-    pattern: /^must contain at most (\d+) distinct products$/,
-    key: 'errors.fragments.maxDistinctProducts',
-    params: (m) => ({ max: m[1] }),
-  },
-  { pattern: /^must contain at most (\d+) items$/, key: 'errors.fragments.atMostItems', params: (m) => ({ max: m[1] }) },
-  { pattern: /^must contain at most (\d+) ids$/, key: 'errors.fragments.atMostIds', params: (m) => ({ max: m[1] }) },
-  {
-    pattern: /^(.+) was not found in stock$/,
-    key: 'errors.fragments.productNotFound',
-    params: (m) => ({ id: m[1] }),
-  },
-];
+const FIELD_PATTERNS: { pattern: RegExp; key: string; params: (match: RegExpMatchArray) => Record<string, string> }[] =
+  [
+    {
+      pattern: /^must have at least (\d+) characters$/,
+      key: 'errors.fragments.minLength',
+      params: (m) => ({ count: m[1] }),
+    },
+    {
+      pattern: /^must have at most (\d+) characters$/,
+      key: 'errors.fragments.maxLength',
+      params: (m) => ({ count: m[1] }),
+    },
+    {
+      pattern: /^must be a number between 1 and (\d+)$/,
+      key: 'errors.fragments.numberBetween',
+      params: (m) => ({ max: m[1] }),
+    },
+    {
+      pattern: /^already sent at position (\d+)$/,
+      key: 'errors.fragments.alreadySentAt',
+      params: (m) => ({ position: m[1] }),
+    },
+    {
+      pattern: /^must contain at most (\d+) distinct products$/,
+      key: 'errors.fragments.maxDistinctProducts',
+      params: (m) => ({ max: m[1] }),
+    },
+    {
+      pattern: /^must contain at most (\d+) items$/,
+      key: 'errors.fragments.atMostItems',
+      params: (m) => ({ max: m[1] }),
+    },
+    { pattern: /^must contain at most (\d+) ids$/, key: 'errors.fragments.atMostIds', params: (m) => ({ max: m[1] }) },
+    {
+      pattern: /^(.+) was not found in stock$/,
+      key: 'errors.fragments.productNotFound',
+      params: (m) => ({ id: m[1] }),
+    },
+  ];
 
 /** A bare number, a UUID or a short code: data to show as-is, not a sentence to translate. */
 const DATA_VALUE = /^(-?\d+(\.\d+)?|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;

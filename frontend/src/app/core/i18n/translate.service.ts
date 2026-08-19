@@ -111,7 +111,5 @@ function interpolate(template: string, params?: Record<string, string | number>)
   if (!params) {
     return template;
   }
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) =>
-    name in params ? String(params[name]) : match,
-  );
+  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
 }

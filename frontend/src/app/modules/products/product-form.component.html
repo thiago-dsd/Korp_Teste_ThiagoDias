@@ -1,6 +1,8 @@
 <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-4" novalidate>
   <div>
-    <label for="product-code" class="text-foreground mb-1 block text-sm font-medium">{{ 'productForm.codeLabel' | t }}</label>
+    <label for="product-code" class="text-foreground mb-1 block text-sm font-medium">{{
+      'productForm.codeLabel' | t
+    }}</label>
     <input
       id="product-code"
       type="text"
@@ -19,7 +21,9 @@
   </div>
 
   <div>
-    <label for="product-description" class="text-foreground mb-1 block text-sm font-medium">{{ 'productForm.descriptionLabel' | t }}</label>
+    <label for="product-description" class="text-foreground mb-1 block text-sm font-medium">{{
+      'productForm.descriptionLabel' | t
+    }}</label>
     <input
       id="product-description"
       type="text"
@@ -34,7 +38,9 @@
   </div>
 
   <div>
-    <label for="product-balance" class="text-foreground mb-1 block text-sm font-medium">{{ 'productForm.balanceLabel' | t }}</label>
+    <label for="product-balance" class="text-foreground mb-1 block text-sm font-medium">{{
+      'productForm.balanceLabel' | t
+    }}</label>
     <input
       id="product-balance"
       type="number"
@@ -56,14 +62,17 @@
   }
 
   <div class="flex justify-end gap-2 pt-2">
-    <button
-      type="button"
-      (click)="cancelled.emit()"
-      class="action-outline action-md">
+    <button type="button" (click)="cancelled.emit()" class="action-outline action-md">
       {{ 'common.cancel' | t }}
     </button>
     <button type="submit" [disabled]="saving()" class="action-solid action-md">
-      {{ saving() ? ('productForm.saving' | t) : isEditing() ? ('productForm.saveChanges' | t) : ('productForm.registerProduct' | t) }}
+      {{
+        saving()
+          ? ('productForm.saving' | t)
+          : isEditing()
+            ? ('productForm.saveChanges' | t)
+            : ('productForm.registerProduct' | t)
+      }}
     </button>
   </div>
 </form>

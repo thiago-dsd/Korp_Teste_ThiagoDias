@@ -21,7 +21,8 @@ export const ptBR = {
   validation: {
     required: 'Este campo é obrigatório.',
     invalidEmail: 'Informe um e-mail válido.',
-    minLength: 'Use pelo menos {{min}} caracteres. Uma frase-senha é mais fácil de lembrar e mais difícil de adivinhar.',
+    minLength:
+      'Use pelo menos {{min}} caracteres. Uma frase-senha é mais fácil de lembrar e mais difícil de adivinhar.',
     maxLength: 'Use no máximo {{max}} caracteres.',
     tooLong: 'Este valor é muito longo.',
     onlyCodeCharacters: 'Use apenas letras, números, ponto, hífen ou sublinhado.',
@@ -56,7 +57,7 @@ export const ptBR = {
   },
   layout: {
     skipToContent: 'Pular para o conteúdo',
-  
+
     openMenu: 'Abrir menu',
     closeMenu: 'Fechar menu',
   },
@@ -105,9 +106,11 @@ export const ptBR = {
     refresh: 'Atualizar',
     newInvoice: 'Nova nota fiscal',
     partialTitle: 'Parte desta página não pôde ser carregada.',
-    partialBody: 'Um dos serviços não respondeu, então um painel abaixo pode estar vazio mesmo sem estar. O que aparece é real.',
+    partialBody:
+      'Um dos serviços não respondeu, então um painel abaixo pode estar vazio mesmo sem estar. O que aparece é real.',
     allClearTitle: 'Nada precisa de atenção.',
-    allClearBody: 'Toda nota foi impressa, e nenhum produto está acabando. Os painéis abaixo se preenchem quando isso mudar.',
+    allClearBody:
+      'Toda nota foi impressa, e nenhum produto está acabando. Os painéis abaixo se preenchem quando isso mudar.',
     tiles: {
       failedLabel: 'Falharam ao imprimir',
       failedHint: 'Reabertas, aguardando alguém corrigir a causa',
@@ -119,7 +122,8 @@ export const ptBR = {
       lowHint: '{{threshold}} unidades ou menos',
     },
     attentionTitle: 'Notas que precisam de atenção',
-    noFailedInvoices: 'Nenhuma nota falhou ao imprimir. Quando isso acontecer, ela volta a ficar aberta com o motivo e aparece aqui.',
+    noFailedInvoices:
+      'Nenhuma nota falhou ao imprimir. Quando isso acontecer, ela volta a ficar aberta com o motivo e aparece aqui.',
     stockTitle: 'Estoque acabando',
     allAboveThreshold: 'Todos os produtos têm mais de {{threshold}} unidades em estoque.',
     adjustBalances: 'Ajustar esses saldos',
@@ -147,7 +151,8 @@ export const ptBR = {
     emptyFilteredTitle: 'Nenhum produto corresponde a estes filtros.',
     emptyFilteredBody: 'Tente outro termo de busca, ou veja todo o catálogo.',
     emptyTitle: 'Ainda não há produtos.',
-    emptyBody: 'Uma nota fiscal é feita de produtos, então o catálogo vem primeiro. Cadastre um, ou cole um catálogo inteiro de uma planilha.',
+    emptyBody:
+      'Uma nota fiscal é feita de produtos, então o catálogo vem primeiro. Cadastre um, ou cole um catálogo inteiro de uma planilha.',
     registerProduct: 'Cadastrar um produto',
     importCatalogue: 'Importar um catálogo',
     selectProductAria: 'Selecionar produto {{code}} para um ajuste de estoque',
@@ -205,7 +210,8 @@ export const ptBR = {
       one: '{{count}} linha não pôde ser lida',
       other: '{{count}} linhas não puderam ser lidas',
     },
-    tooMany: 'São mais de {{max}} produtos. Importe em lotes menores para que uma única recusa não te mande de volta à planilha.',
+    tooMany:
+      'São mais de {{max}} produtos. Importe em lotes menores para que uma única recusa não te mande de volta à planilha.',
     lineError: 'Linha {{line}}: {{error}}',
     andMore: 'e mais {{count}}…',
     importCount: {
@@ -222,7 +228,8 @@ export const ptBR = {
     title: 'Histórico de estoque',
     subtitle: 'Toda mudança no saldo de {{code}}, mais recente primeiro. O saldo hoje é {{balance}}.',
     loadingSr: 'Carregando o histórico de estoque…',
-    emptyState: 'Nenhum movimento registrado para este produto. Eles aparecem aqui assim que o estoque é recebido, corrigido ou usado por uma nota.',
+    emptyState:
+      'Nenhum movimento registrado para este produto. Eles aparecem aqui assim que o estoque é recebido, corrigido ou usado por uma nota.',
     balanceLabel: 'saldo {{balance}}',
     sources: {
       registration: 'Saldo de abertura',
@@ -241,7 +248,8 @@ export const ptBR = {
     filterStatusAria: 'Filtrar notas por status',
     needsAttention: 'Precisa de atenção',
     askTitle: 'Busque escrevendo',
-    askBody: 'Descreva o que procura com suas próprias palavras. O assistente preenche os filtros abaixo, que você pode revisar e ajustar.',
+    askBody:
+      'Descreva o que procura com suas próprias palavras. O assistente preenche os filtros abaixo, que você pode revisar e ajustar.',
     askLabel: 'O que você procura',
     askPlaceholder: 'ex.: notas abertas de agosto com parafuso',
     ask: 'Buscar',
@@ -274,7 +282,8 @@ export const ptBR = {
     emptyFilteredTitle: 'Nenhuma nota corresponde a estes filtros.',
     emptyFilteredBody: 'Amplie o período, ou veja todas as notas novamente.',
     emptyTitle: 'Ainda não há notas fiscais.',
-    emptyBody: 'Uma nota é criada aberta e recebe o número do serviço. Imprimi-la a fecha e retira as quantidades do estoque.',
+    emptyBody:
+      'Uma nota é criada aberta e recebe o número do serviço. Imprimi-la a fecha e retira as quantidades do estoque.',
     createFirst: 'Criar a primeira nota',
     selectAria: 'Selecionar nota {{number}} para impressão',
     openAria: 'Abrir nota {{number}}',
@@ -297,7 +306,8 @@ export const ptBR = {
     subtitle: 'Adicione os produtos e suas quantidades. A nota é criada aberta e recebe o número do serviço.',
     catalogueUnreachable: 'Os produtos vêm do serviço de estoque, que não está respondendo.',
     assistantTitle: 'Descreva a nota fiscal',
-    assistantBody: 'Escreva o que você está vendendo com suas próprias palavras. O assistente compara com o catálogo e preenche as linhas abaixo; você revisa tudo antes de a nota ser criada.',
+    assistantBody:
+      'Escreva o que você está vendendo com suas próprias palavras. O assistente compara com o catálogo e preenche as linhas abaixo; você revisa tudo antes de a nota ser criada.',
     assistantInputLabel: 'O que você está vendendo?',
     assistantPlaceholder: 'ex.: dois parafusos de aço e um martelo',
     assistantFill: 'Preencher com o assistente',
@@ -378,8 +388,10 @@ export const ptBR = {
       one: 'Concluído: {{succeeded}} de {{count}} {{noun}}.',
       other: 'Concluído: {{succeeded}} de {{count}} {{noun}}.',
     },
-    rolledBackExplanation: 'Este lote de {{noun}} é tratado como um único documento: um item que não pôde ser aplicado interrompe todos. Corrija abaixo e envie novamente.',
-    refusedExplanation: 'Os itens recusados de {{noun}} continuam selecionados abaixo, para que você possa corrigi-los e tentar novamente.',
+    rolledBackExplanation:
+      'Este lote de {{noun}} é tratado como um único documento: um item que não pôde ser aplicado interrompe todos. Corrija abaixo e envie novamente.',
+    refusedExplanation:
+      'Os itens recusados de {{noun}} continuam selecionados abaixo, para que você possa corrigi-los e tentar novamente.',
   },
   nouns: {
     product: { one: 'produto', other: 'produtos' },
@@ -517,7 +529,8 @@ export const ptBR = {
       unauthorized: 'Token de serviço ausente ou inválido.',
       unknown_queue: 'Este serviço não consome essa fila.',
       user_not_found: 'Conta não encontrada.',
-      print_timeout: 'O serviço de estoque não respondeu a tempo. A nota está aberta novamente; tente imprimir mais uma vez.',
+      print_timeout:
+        'O serviço de estoque não respondeu a tempo. A nota está aberta novamente; tente imprimir mais uma vez.',
     },
     /** Field names, for the "code: reason" lines a refused bulk item shows. */
     fields: {

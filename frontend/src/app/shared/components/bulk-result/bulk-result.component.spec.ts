@@ -113,9 +113,7 @@ describe('BulkResultComponent', () => {
   });
 
   it('should fall back to the position when an item has no reference', () => {
-    render(
-      response(false, [{ index: 3, status: 'failed', error: { code: 'invalid_product', message: 'Bad line.' } }]),
-    );
+    render(response(false, [{ index: 3, status: 'failed', error: { code: 'invalid_product', message: 'Bad line.' } }]));
 
     expect(text()).toContain('Item 4');
   });

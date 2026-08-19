@@ -97,7 +97,9 @@ export class ProductMovementsComponent implements OnInit {
         return this.i18n.t('productMovements.sources.edit');
       case 'adjustment':
         return this.i18n.t(
-          movement.delta > 0 ? 'productMovements.sources.adjustmentReceived' : 'productMovements.sources.adjustmentRemoved',
+          movement.delta > 0
+            ? 'productMovements.sources.adjustmentReceived'
+            : 'productMovements.sources.adjustmentRemoved',
         );
       case 'invoice':
         return this.i18n.t('productMovements.sources.invoice');
@@ -109,7 +111,9 @@ export class ProductMovementsComponent implements OnInit {
     if (movement.actorEmail) {
       return movement.actorEmail;
     }
-    return this.i18n.t(movement.source === 'invoice' ? 'productMovements.actorInvoice' : 'productMovements.actorSystem');
+    return this.i18n.t(
+      movement.source === 'invoice' ? 'productMovements.actorInvoice' : 'productMovements.actorSystem',
+    );
   }
 
   close(): void {

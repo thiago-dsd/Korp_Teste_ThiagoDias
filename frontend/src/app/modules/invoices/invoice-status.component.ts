@@ -7,10 +7,7 @@ import { TranslateService } from 'src/app/core/i18n/translate.service';
 @Component({
   selector: 'app-invoice-status',
   template: `
-    <span
-      class="pill"
-      [class]="styles()"
-      role="status">
+    <span class="pill" [class]="styles()" role="status">
       @if (status() === 'PRINTING') {
         <span
           class="border-current h-3 w-3 animate-spin rounded-full border-2 border-t-transparent"

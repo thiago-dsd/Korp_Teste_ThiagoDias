@@ -54,7 +54,7 @@ export const enUS = {
   },
   layout: {
     skipToContent: 'Skip to the content',
-  
+
     openMenu: 'Open menu',
     closeMenu: 'Close menu',
   },
@@ -103,7 +103,8 @@ export const enUS = {
     refresh: 'Refresh',
     newInvoice: 'New invoice',
     partialTitle: 'Part of this page could not be loaded.',
-    partialBody: 'One of the services did not answer, so a panel below may be empty when it is not. What is shown is real.',
+    partialBody:
+      'One of the services did not answer, so a panel below may be empty when it is not. What is shown is real.',
     allClearTitle: 'Nothing needs attention.',
     allClearBody: 'Every invoice printed, and no product is running out. The panels below fill up when that changes.',
     tiles: {
@@ -145,7 +146,8 @@ export const enUS = {
     emptyFilteredTitle: 'No product matches these filters.',
     emptyFilteredBody: 'Try a different search term, or look at the whole catalogue.',
     emptyTitle: 'No products yet.',
-    emptyBody: 'An invoice is made of products, so the catalogue comes first. Register one, or paste a whole catalogue from a spreadsheet.',
+    emptyBody:
+      'An invoice is made of products, so the catalogue comes first. Register one, or paste a whole catalogue from a spreadsheet.',
     registerProduct: 'Register a product',
     importCatalogue: 'Import a catalogue',
     selectProductAria: 'Select product {{code}} for a stock adjustment',
@@ -203,7 +205,8 @@ export const enUS = {
       one: '{{count}} line cannot be read',
       other: '{{count}} lines cannot be read',
     },
-    tooMany: 'That is more than {{max}} products. Import them in smaller batches so a single refusal does not send you back to the spreadsheet.',
+    tooMany:
+      'That is more than {{max}} products. Import them in smaller batches so a single refusal does not send you back to the spreadsheet.',
     lineError: 'Line {{line}}: {{error}}',
     andMore: 'and {{count}} more…',
     importCount: {
@@ -220,7 +223,8 @@ export const enUS = {
     title: 'Stock history',
     subtitle: 'Every change to the balance of {{code}}, newest first. The balance today is {{balance}}.',
     loadingSr: 'Loading the stock history…',
-    emptyState: 'No movements recorded for this product. They appear here as soon as stock is received, corrected or taken by an invoice.',
+    emptyState:
+      'No movements recorded for this product. They appear here as soon as stock is received, corrected or taken by an invoice.',
     balanceLabel: 'balance {{balance}}',
     sources: {
       registration: 'Opening balance',
@@ -239,7 +243,8 @@ export const enUS = {
     filterStatusAria: 'Filter invoices by status',
     needsAttention: 'Needs attention',
     askTitle: 'Search by writing',
-    askBody: 'Describe what you are looking for in your own words. The assistant fills in the filters below, which you can review and adjust.',
+    askBody:
+      'Describe what you are looking for in your own words. The assistant fills in the filters below, which you can review and adjust.',
     askLabel: 'What you are looking for',
     askPlaceholder: 'e.g. open invoices from August with bolts',
     ask: 'Search',
@@ -272,7 +277,8 @@ export const enUS = {
     emptyFilteredTitle: 'No invoice matches these filters.',
     emptyFilteredBody: 'Widen the dates, or look at every invoice again.',
     emptyTitle: 'No invoices yet.',
-    emptyBody: 'An invoice is created open and gets its number from the service. Printing it closes it and takes the quantities out of stock.',
+    emptyBody:
+      'An invoice is created open and gets its number from the service. Printing it closes it and takes the quantities out of stock.',
     createFirst: 'Create the first invoice',
     selectAria: 'Select invoice {{number}} for printing',
     openAria: 'Open invoice {{number}}',
@@ -292,10 +298,12 @@ export const enUS = {
   invoiceNew: {
     back: 'Back to invoices',
     title: 'New invoice',
-    subtitle: 'Add the products and their quantities. The invoice is created open and gets its number from the service.',
+    subtitle:
+      'Add the products and their quantities. The invoice is created open and gets its number from the service.',
     catalogueUnreachable: 'Products come from the stock service, which is not answering.',
     assistantTitle: 'Describe the invoice',
-    assistantBody: 'Write what you are selling in your own words. The assistant matches it against the catalogue and fills the lines below; you review everything before the invoice is created.',
+    assistantBody:
+      'Write what you are selling in your own words. The assistant matches it against the catalogue and fills the lines below; you review everything before the invoice is created.',
     assistantInputLabel: 'What are you selling?',
     assistantPlaceholder: 'e.g. two steel bolts and a hammer',
     assistantFill: 'Fill with assistant',
@@ -319,7 +327,8 @@ export const enUS = {
     removeAria: 'Remove {{code}} from the invoice',
     remove: 'Remove',
     overBalanceTitle: 'Some quantities are above the current balance',
-    overBalanceBody: 'The invoice can still be created, but printing it will be refused until the stock is replenished.',
+    overBalanceBody:
+      'The invoice can still be created, but printing it will be refused until the stock is replenished.',
     totalQuantity: 'Total quantity: {{total}}',
     createInvoice: 'Create invoice',
     creating: 'Creating…',
@@ -376,8 +385,10 @@ export const enUS = {
       one: '{{succeeded}} of {{count}} {{noun}} went through.',
       other: '{{succeeded}} of {{count}} {{noun}} went through.',
     },
-    rolledBackExplanation: 'These {{noun}} belong to one document, so a single item that cannot be applied stops all of them. Fix it below and send again.',
-    refusedExplanation: 'The {{noun}} below were refused and are still selected, so you can correct them and try again.',
+    rolledBackExplanation:
+      'These {{noun}} belong to one document, so a single item that cannot be applied stops all of them. Fix it below and send again.',
+    refusedExplanation:
+      'The {{noun}} below were refused and are still selected, so you can correct them and try again.',
   },
   nouns: {
     product: { one: 'product', other: 'products' },
@@ -506,7 +517,8 @@ export const enUS = {
       unauthorized: 'Service token is missing or invalid.',
       unknown_queue: 'This service does not consume that queue.',
       user_not_found: 'Account was not found.',
-      print_timeout: 'The stock service did not answer in time. The invoice is open again; please try printing once more.',
+      print_timeout:
+        'The stock service did not answer in time. The invoice is open again; please try printing once more.',
     },
     fields: {
       code: 'code',

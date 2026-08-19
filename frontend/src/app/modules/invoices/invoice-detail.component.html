@@ -13,7 +13,9 @@
   } @else if (invoice(); as invoice) {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-foreground text-xl font-semibold">{{ 'invoiceDetail.heading' | t: { number: invoice.number } }}</h1>
+        <h1 class="text-foreground text-xl font-semibold">
+          {{ 'invoiceDetail.heading' | t: { number: invoice.number } }}
+        </h1>
         <!-- The dates used to be repeated here; the timeline below owns them now. -->
         <div class="mt-2">
           <app-invoice-status [status]="invoice.status" />
@@ -45,7 +47,9 @@
                 | t
                   : {
                       state:
-                        invoice.status === 'CLOSED' ? ('invoiceDetail.alreadyClosed' | t) : ('invoiceDetail.beingPrinted' | t),
+                        invoice.status === 'CLOSED'
+                          ? ('invoiceDetail.alreadyClosed' | t)
+                          : ('invoiceDetail.beingPrinted' | t),
                     }
             }}
           </p>
@@ -56,7 +60,9 @@
     <!-- What happened to this invoice, in order. -->
     <div class="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <section class="surface p-4" aria-labelledby="timeline-title">
-        <h2 id="timeline-title" class="text-foreground text-sm font-semibold">{{ 'invoiceDetail.whatHappened' | t }}</h2>
+        <h2 id="timeline-title" class="text-foreground text-sm font-semibold">
+          {{ 'invoiceDetail.whatHappened' | t }}
+        </h2>
         <ol class="mt-3 space-y-3" aria-live="polite">
           @for (entry of timeline(); track entry.title) {
             <li class="flex gap-3">
@@ -135,7 +141,9 @@
     <div class="surface scroll-area">
       <table class="w-full text-left text-sm">
         <caption class="sr-only">
-          {{ 'invoiceDetail.tableCaption' | t }}
+          {{
+            'invoiceDetail.tableCaption' | t
+          }}
         </caption>
         <thead class="bg-card text-muted-foreground text-xs uppercase">
           <tr>

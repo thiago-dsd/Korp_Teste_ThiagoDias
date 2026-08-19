@@ -69,11 +69,7 @@
     <button type="button" (click)="close()" class="action-outline action-md">
       {{ 'common.close' | t }}
     </button>
-    <button
-      type="button"
-      (click)="submit()"
-      [disabled]="!canImport()"
-      class="action-solid action-md">
+    <button type="button" (click)="submit()" [disabled]="!canImport()" class="action-solid action-md">
       {{ importing() ? ('productImport.importing' | t) : i18n.plural('productImport.importCount', valid().length) }}
     </button>
   </div>

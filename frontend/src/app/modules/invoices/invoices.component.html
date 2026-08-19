@@ -15,9 +15,7 @@
         <svg-icon src="assets/icons/heroicons/outline/download.svg" [svgClass]="'h-4 w-4'"></svg-icon>
         {{ 'common.export' | t }}
       </button>
-      <a
-        routerLink="/invoices/new"
-        class="action-solid action-md inline-flex items-center gap-2">
+      <a routerLink="/invoices/new" class="action-solid action-md inline-flex items-center gap-2">
         <svg-icon src="assets/icons/heroicons/outline/folder.svg" [svgClass]="'h-4 w-4'"></svg-icon>
         {{ 'invoices.newInvoice' | t }}
       </a>
@@ -64,7 +62,9 @@
     -->
     <section class="notice border-primary/30 bg-primary/5 border-dashed" aria-labelledby="ask-title">
       <h2 id="ask-title" class="text-foreground flex items-center gap-2 text-sm font-semibold">
-        <svg-icon src="assets/icons/heroicons/outline/magnifying-glass.svg" [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
+        <svg-icon
+          src="assets/icons/heroicons/outline/magnifying-glass.svg"
+          [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
         {{ 'invoices.askTitle' | t }}
       </h2>
       <p class="text-muted-foreground mt-1 text-xs">{{ 'invoices.askBody' | t }}</p>
@@ -107,7 +107,9 @@
     class="surface grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5"
     [attr.aria-label]="'invoices.filterFormAria' | t">
     <div>
-      <label for="filter-number" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.numberLabel' | t }}</label>
+      <label for="filter-number" class="text-foreground mb-1 block text-xs font-medium">{{
+        'invoices.numberLabel' | t
+      }}</label>
       <input
         id="filter-number"
         #numberField
@@ -118,21 +120,19 @@
         [placeholder]="'invoices.numberPlaceholder' | t" />
     </div>
     <div>
-      <label for="filter-from" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.fromLabel' | t }}</label>
-      <input
-        id="filter-from"
-        type="date"
-        [formControl]="fromControl" />
+      <label for="filter-from" class="text-foreground mb-1 block text-xs font-medium">{{
+        'invoices.fromLabel' | t
+      }}</label>
+      <input id="filter-from" type="date" [formControl]="fromControl" />
     </div>
     <div>
       <label for="filter-to" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.toLabel' | t }}</label>
-      <input
-        id="filter-to"
-        type="date"
-        [formControl]="toControl" />
+      <input id="filter-to" type="date" [formControl]="toControl" />
     </div>
     <div>
-      <label for="filter-product" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.productLabel' | t }}</label>
+      <label for="filter-product" class="text-foreground mb-1 block text-xs font-medium">{{
+        'invoices.productLabel' | t
+      }}</label>
       <input
         id="filter-product"
         type="text"
@@ -142,10 +142,7 @@
     <div class="flex items-end gap-2">
       <button type="submit" class="action-solid action-md flex-1">{{ 'common.apply' | t }}</button>
       @if (hasActiveFilters()) {
-        <button
-          type="button"
-          (click)="clearFilters()"
-          class="action-outline action-md">
+        <button type="button" (click)="clearFilters()" class="action-outline action-md">
           {{ 'common.clear' | t }}
         </button>
       }
@@ -174,7 +171,9 @@
         {{ i18n.plural('invoices.selectedCount', selectedCount()) }}
       </span>
       @if (selectionFull()) {
-        <span class="text-muted-foreground text-xs">{{ 'invoices.selectionLimitNotice' | t: { max: maxSelectable } }}</span>
+        <span class="text-muted-foreground text-xs">{{
+          'invoices.selectionLimitNotice' | t: { max: maxSelectable }
+        }}</span>
       }
       <button
         type="button"
@@ -183,10 +182,7 @@
         class="action-solid action-md ml-auto">
         {{ printingBatch() ? ('invoices.sending' | t) : ('invoices.printSelected' | t) }}
       </button>
-      <button
-        type="button"
-        (click)="clearSelection()"
-        class="action-outline action-sm">
+      <button type="button" (click)="clearSelection()" class="action-outline action-sm">
         {{ 'common.clear' | t }}
       </button>
     </div>
@@ -201,7 +197,9 @@
     <div class="scroll-area">
       <table class="w-full text-left text-sm">
         <caption class="sr-only">
-          {{ 'invoices.tableCaption' | t }}
+          {{
+            'invoices.tableCaption' | t
+          }}
         </caption>
         <thead class="bg-card text-muted-foreground text-xs uppercase">
           <tr>
@@ -224,7 +222,9 @@
             <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoices.tableStatus' | t }}</th>
             <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoices.tableProducts' | t }}</th>
             <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoices.tableCreated' | t }}</th>
-            <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">{{ 'invoices.actionsLabel' | t }}</span></th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">
+              <span class="sr-only">{{ 'invoices.actionsLabel' | t }}</span>
+            </th>
           </tr>
         </thead>
         <tbody class="divide-muted divide-y" aria-live="polite" aria-busy="{{ loading() }}">
@@ -250,10 +250,7 @@
                   <p class="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
                     {{ 'invoices.emptyFilteredBody' | t }}
                   </p>
-                  <button
-                    type="button"
-                    (click)="clearFilters()"
-                    class="action-outline action-md mt-3">
+                  <button type="button" (click)="clearFilters()" class="action-outline action-md mt-3">
                     {{ 'common.clearFilters' | t }}
                   </button>
                 } @else {
@@ -261,9 +258,7 @@
                   <p class="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
                     {{ 'invoices.emptyBody' | t }}
                   </p>
-                  <a
-                    routerLink="/invoices/new"
-                    class="action-solid action-md mt-3 inline-flex">
+                  <a routerLink="/invoices/new" class="action-solid action-md mt-3 inline-flex">
                     {{ 'invoices.createFirst' | t }}
                   </a>
                 }
@@ -309,11 +304,7 @@
 
     @if (hasMore()) {
       <div class="border-muted/60 flex justify-center border-t px-4 py-3">
-        <button
-          type="button"
-          (click)="loadMore()"
-          [disabled]="loadingMore()"
-          class="action-outline action-sm">
+        <button type="button" (click)="loadMore()" [disabled]="loadingMore()" class="action-outline action-sm">
           {{ loadingMore() ? ('common.loading' | t) : ('common.loadMore' | t) }}
         </button>
       </div>

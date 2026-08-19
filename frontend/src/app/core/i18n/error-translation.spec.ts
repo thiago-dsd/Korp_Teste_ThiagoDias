@@ -40,9 +40,7 @@ describe('error-translation', () => {
     });
 
     it('translates a parameterised sentence, carrying the number over', () => {
-      expect(translateFieldMessage(i18n, 'must have at most 32 characters')).toBe(
-        'deve ter no máximo 32 caracteres',
-      );
+      expect(translateFieldMessage(i18n, 'must have at most 32 characters')).toBe('deve ter no máximo 32 caracteres');
       expect(translateFieldMessage(i18n, 'must be a number between 1 and 100')).toBe(
         'deve ser um número entre 1 e 100',
       );

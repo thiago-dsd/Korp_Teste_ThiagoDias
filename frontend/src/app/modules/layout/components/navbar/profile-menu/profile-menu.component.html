@@ -153,10 +153,7 @@
           <p role="alert" class="text-destructive mt-1 text-xs">{{ error | apiError }}</p>
         }
         <div class="mt-2 flex gap-2">
-          <button
-            type="button"
-            (click)="cancelAccountDeletion()"
-            class="action-outline action-sm flex-1">
+          <button type="button" (click)="cancelAccountDeletion()" class="action-outline action-sm flex-1">
             {{ 'profileMenu.cancel' | t }}
           </button>
           <button

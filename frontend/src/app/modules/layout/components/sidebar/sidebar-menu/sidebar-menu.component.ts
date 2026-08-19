@@ -12,7 +12,15 @@ import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
   templateUrl: './sidebar-menu.component.html',
   styleUrls: ['./sidebar-menu.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgClass, AngularSvgIconModule, NgTemplateOutlet, RouterLink, RouterLinkActive, SidebarSubmenuComponent, TranslatePipe],
+  imports: [
+    NgClass,
+    AngularSvgIconModule,
+    NgTemplateOutlet,
+    RouterLink,
+    RouterLinkActive,
+    SidebarSubmenuComponent,
+    TranslatePipe,
+  ],
 })
 export class SidebarMenuComponent {
   menuService = inject(MenuService);

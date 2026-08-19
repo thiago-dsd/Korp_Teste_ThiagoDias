@@ -47,9 +47,11 @@ describe('InvoiceNewComponent', () => {
 
   function loadCatalogue(assistantAvailable = false): void {
     http.expectOne(`${invoicesUrl}/draft`).flush({ available: assistantAvailable });
-    http.expectOne((request) => request.url === productsUrl).flush({
-      items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
-    });
+    http
+      .expectOne((request) => request.url === productsUrl)
+      .flush({
+        items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
+      });
   }
 
   function addLine(productId: string, quantity: number): void {
@@ -185,7 +187,9 @@ describe('InvoiceNewComponent', () => {
   });
 
   it('should explain when the catalogue cannot be loaded', async () => {
-    http.expectOne((request) => request.url === productsUrl).error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+    http
+      .expectOne((request) => request.url === productsUrl)
+      .error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -232,9 +236,11 @@ describe('InvoiceNewComponent with the assistant', () => {
     fixture.detectChanges();
 
     http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
-    http.expectOne((request) => request.url === productsUrl).flush({
-      items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
-    });
+    http
+      .expectOne((request) => request.url === productsUrl)
+      .flush({
+        items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 1)],
+      });
     await fixture.whenStable();
     fixture.detectChanges();
   });

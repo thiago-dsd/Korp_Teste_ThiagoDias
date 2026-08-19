@@ -19,9 +19,7 @@
   }
 
   @if (assistantAvailable()) {
-    <section
-      class="notice border-primary/30 bg-primary/5 border-dashed"
-      aria-labelledby="assistant-title">
+    <section class="notice border-primary/30 bg-primary/5 border-dashed" aria-labelledby="assistant-title">
       <h2 id="assistant-title" class="text-foreground flex items-center gap-2 text-sm font-semibold">
         <svg-icon src="assets/icons/heroicons/outline/cube.svg" [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
         {{ 'invoiceNew.assistantTitle' | t }}
@@ -72,7 +70,9 @@
     class="surface grid gap-3 p-4 sm:grid-cols-[1fr_auto_auto]"
     novalidate>
     <div>
-      <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">{{ 'invoiceNew.productLabel' | t }}</label>
+      <label for="line-product" class="text-foreground mb-1 block text-sm font-medium">{{
+        'invoiceNew.productLabel' | t
+      }}</label>
       <!--
         The search narrows the picker at the service, not in the browser: the
         picker holds one page, and a catalogue bigger than that used to hide
@@ -90,9 +90,7 @@
           [formControl]="catalogueSearch"
           [placeholder]="'invoiceNew.searchPlaceholder' | t" />
       </div>
-      <select
-        id="line-product"
-        formControlName="productId">
+      <select id="line-product" formControlName="productId">
         <option value="" disabled>
           {{ loadingCatalogue() ? ('invoiceNew.loadingProducts' | t) : ('invoiceNew.selectProduct' | t) }}
         </option>
@@ -108,7 +106,9 @@
     </div>
 
     <div>
-      <label for="line-quantity" class="text-foreground mb-1 block text-sm font-medium">{{ 'invoiceNew.quantityLabel' | t }}</label>
+      <label for="line-quantity" class="text-foreground mb-1 block text-sm font-medium">{{
+        'invoiceNew.quantityLabel' | t
+      }}</label>
       <input
         id="line-quantity"
         type="number"
@@ -120,10 +120,7 @@
     </div>
 
     <div class="flex items-end">
-      <button
-        type="submit"
-        [disabled]="available().length === 0"
-        class="action-outline action-md w-full">
+      <button type="submit" [disabled]="available().length === 0" class="action-outline action-md w-full">
         {{ 'invoiceNew.addProduct' | t }}
       </button>
     </div>
@@ -132,7 +129,9 @@
   <div class="surface scroll-area">
     <table class="w-full text-left text-sm">
       <caption class="sr-only">
-        {{ 'invoiceNew.tableCaption' | t }}
+        {{
+          'invoiceNew.tableCaption' | t
+        }}
       </caption>
       <thead class="bg-card text-muted-foreground text-xs uppercase">
         <tr>
@@ -140,7 +139,9 @@
           <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoiceNew.tableDescription' | t }}</th>
           <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoiceNew.tableQuantity' | t }}</th>
           <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoiceNew.tableInStock' | t }}</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">{{ 'invoiceNew.actionsLabel' | t }}</span></th>
+          <th scope="col" class="px-4 py-3 text-right font-semibold">
+            <span class="sr-only">{{ 'invoiceNew.actionsLabel' | t }}</span>
+          </th>
         </tr>
       </thead>
       <tbody class="divide-muted divide-y">
@@ -196,11 +197,7 @@
 
   <div class="flex items-center justify-between gap-3">
     <p class="text-muted-foreground text-sm">{{ 'invoiceNew.totalQuantity' | t: { total: totalQuantity() } }}</p>
-    <button
-      type="button"
-      (click)="save()"
-      [disabled]="lines().length === 0 || saving()"
-      class="action-solid action-md">
+    <button type="button" (click)="save()" [disabled]="lines().length === 0 || saving()" class="action-solid action-md">
       {{ saving() ? ('invoiceNew.creating' | t) : ('invoiceNew.createInvoice' | t) }}
     </button>
   </div>
