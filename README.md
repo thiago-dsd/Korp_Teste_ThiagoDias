@@ -4,6 +4,19 @@ Invoice issuing system built for the Korp technical challenge: product registrat
 invoice creation with sequential numbering, and invoice printing that closes the invoice and
 debits the stock balances.
 
+## Try it in two commands
+
+You need **Docker** and **Node.js 22+**.
+
+```bash
+make services-up                          # database, broker and the three services
+cd frontend && npm install && npm start   # the app, on http://localhost:4200
+```
+
+Open <http://localhost:4200>, create an account, and you can register a product and issue an
+invoice for it right away. [Running it](#running-it) has the walk through, the ports and how to
+switch the AI assistants on.
+
 ## Architecture
 
 ```
@@ -18,7 +31,8 @@ Angular SPA (frontend/)
                         service's transactional outbox
 ```
 
-- Two independent services, each owning its own database. No shared tables.
+- Three independent services, each owning its own database. No shared tables. The challenge
+  asked for two.
 - Printing is asynchronous: billing marks the invoice as `PRINTING` and records the event in its
   outbox in the same transaction; stock debits the balances and answers with an event; billing
   closes the invoice or reopens it with the reason for the failure.
@@ -334,7 +348,7 @@ catch regressions are in [docs/performance.md](docs/performance.md). The load ge
 
 ## Running it
 
-You need **Docker** and **Node.js 22+**. Everything else runs in containers.
+The two commands at the top of this file, from a clean clone:
 
 ```bash
 git clone https://github.com/thiago-dsd/Korp_Teste_ThiagoDias.git
@@ -344,7 +358,7 @@ make services-up                          # database, broker and the three servi
 cd frontend && npm install && npm start   # the app, on http://localhost:4200
 ```
 
-The first command builds three images and starts them with PostgreSQL and RabbitMQ. Each service
+The first builds three images and starts them with PostgreSQL and RabbitMQ. Each service
 creates and migrates its own database on startup, so there is nothing to seed by hand. It takes a
 couple of minutes the first time and seconds after that.
 
