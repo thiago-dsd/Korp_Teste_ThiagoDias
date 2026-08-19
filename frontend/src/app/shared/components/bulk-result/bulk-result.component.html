@@ -1,7 +1,7 @@
 <div
   role="status"
   aria-live="polite"
-  class="rounded-md border p-4 text-sm"
+  class="notice"
   [class]="hasProblem() ? 'border-destructive/40 bg-destructive/10' : 'border-primary/40 bg-primary/10'">
   <div class="flex items-start justify-between gap-3">
     <div>
@@ -13,9 +13,9 @@
     <button
       type="button"
       (click)="dismiss.emit()"
-      class="text-muted-foreground text-xs font-semibold underline"
-      aria-label="Dismiss result">
-      Dismiss
+      class="action-link text-muted-foreground text-xs font-semibold underline"
+      [attr.aria-label]="'common.dismiss' | t">
+      {{ 'common.dismiss' | t }}
     </button>
   </div>
 
@@ -23,12 +23,10 @@
     <ul class="divide-muted mt-3 divide-y">
       @for (failure of failures(); track failure.index) {
         <li class="flex flex-wrap items-baseline gap-x-2 py-2">
-          <span class="text-foreground font-medium">{{ failure.reference || 'Item ' + (failure.index + 1) }}</span>
-          <span class="text-destructive text-xs">{{ failure.error?.message }}</span>
-          @if (failure.error?.details; as details) {
-            @for (entry of details | keyvalue; track entry.key) {
-              <span class="text-muted-foreground text-xs">{{ entry.key }}: {{ entry.value }}</span>
-            }
+          <span class="text-foreground font-medium">{{ failure.reference || itemFallback(failure.index) }}</span>
+          <span class="text-destructive text-xs">{{ failureMessage(failure.error?.code) }}</span>
+          @for (entry of failureDetails(failure.error?.details); track entry.key) {
+            <span class="text-muted-foreground text-xs">{{ entry.key }}: {{ entry.value }}</span>
           }
         </li>
       }

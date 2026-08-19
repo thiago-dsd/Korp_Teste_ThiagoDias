@@ -6,7 +6,7 @@ import { environment } from 'src/environments/environment';
 import { ApiError } from '../models/api-error.model';
 import { BulkResponse, isBulkResponse } from '../models/bulk.model';
 import { Page } from '../models/page.model';
-import { NewProduct, Product, ProductUpdate } from '../models/product.model';
+import { MovementSource, NewProduct, Product, ProductUpdate, StockMovement } from '../models/product.model';
 
 /**
  * One stock movement: a delivery arriving adds, a loss or a correction
@@ -45,6 +45,22 @@ interface ProductPayload {
 
 interface ProductListPayload {
   items: ProductPayload[];
+  next_cursor?: string;
+}
+
+interface MovementPayload {
+  id: string;
+  delta: number;
+  balance_after: number;
+  source: MovementSource;
+  reason?: string;
+  invoice_id?: string;
+  actor_email?: string;
+  created_at: string;
+}
+
+interface MovementListPayload {
+  items: MovementPayload[];
   next_cursor?: string;
 }
 
@@ -115,6 +131,38 @@ export class ProductService {
   }
 
   /**
+   * Registers several products in one call, which is how a catalogue is
+   * brought in rather than typed one row at a time.
+   *
+   * The items are independent: a malformed line does not hold the good ones
+   * back, and the answer says which line to fix.
+   */
+  createMany(products: NewProduct[], idempotencyKey: string): Observable<BulkResponse> {
+    return this.http.post<BulkResponse>(
+      `${this.baseUrl}/bulk`,
+      { items: products },
+      { headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) },
+    );
+  }
+
+  /**
+   * Reads why the balance of a product is what it is, newest movement first.
+   */
+  listMovements(productId: string, cursor = ''): Observable<Page<StockMovement>> {
+    let params = new HttpParams();
+    if (cursor) {
+      params = params.set('cursor', cursor);
+    }
+
+    return this.http.get<MovementListPayload>(`${this.baseUrl}/${productId}/movements`, { params }).pipe(
+      map((payload) => ({
+        items: payload.items.map(toMovement),
+        nextCursor: payload.next_cursor ?? '',
+      })),
+    );
+  }
+
+  /**
    * Applies several stock movements together.
    *
    * The movements belong to one document, so the service applies all of them
@@ -158,6 +206,19 @@ function toProduct(payload: ProductPayload): Product {
     version: payload.version,
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
+  };
+}
+
+function toMovement(payload: MovementPayload): StockMovement {
+  return {
+    id: payload.id,
+    delta: payload.delta,
+    balanceAfter: payload.balance_after,
+    source: payload.source,
+    reason: payload.reason ?? '',
+    invoiceId: payload.invoice_id ?? '',
+    actorEmail: payload.actor_email ?? '',
+    createdAt: payload.created_at,
   };
 }
 

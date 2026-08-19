@@ -1,0 +1,73 @@
+<div class="space-y-4">
+  <div>
+    <h3 class="text-foreground text-sm font-semibold">{{ 'productMovements.title' | t }}</h3>
+    <p class="text-muted-foreground mt-1 text-xs">
+      {{ 'productMovements.subtitle' | t: { code: product().code, balance: product().balance } }}
+    </p>
+  </div>
+
+  @if (failure(); as error) {
+    <div role="alert" class="notice-tight border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
+      <button type="button" (click)="load()" class="action-link text-destructive mt-2 text-xs font-semibold underline">
+        {{ 'common.tryAgain' | t }}
+      </button>
+    </div>
+  }
+
+  <div class="surface max-h-96 overflow-y-auto">
+    @if (loading()) {
+      <div class="space-y-2 p-4">
+        @for (row of [1, 2, 3]; track row) {
+          <div class="bg-muted/40 h-10 animate-pulse rounded" aria-hidden="true"></div>
+        }
+        <p class="sr-only">{{ 'productMovements.loadingSr' | t }}</p>
+      </div>
+    } @else if (items().length === 0) {
+      <p class="text-muted-foreground px-4 py-8 text-center text-sm">
+        {{ 'productMovements.emptyState' | t }}
+      </p>
+    } @else {
+      <ul class="divide-muted divide-y">
+        @for (movement of items(); track movement.id) {
+          <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-sm">
+            <span
+              class="w-14 shrink-0 text-right font-semibold tabular-nums"
+              [class]="movement.delta > 0 ? 'text-emerald-600' : 'text-destructive'">
+              {{ movement.delta > 0 ? '+' : '' }}{{ movement.delta | localeNumber }}
+            </span>
+            <div class="min-w-40 flex-1">
+              <p class="text-foreground">{{ labelFor(movement) }}</p>
+              @if (movement.reason) {
+                <p class="text-muted-foreground text-xs">{{ movement.reason }}</p>
+              }
+              <p class="text-muted-foreground text-xs">
+                {{ movement.createdAt | localeDate: 'short' }} · {{ actorFor(movement) }}
+              </p>
+            </div>
+            <span class="text-muted-foreground shrink-0 text-xs">{{
+              'productMovements.balanceLabel' | t: { balance: movement.balanceAfter }
+            }}</span>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+
+  <div class="flex items-center justify-between gap-2">
+    @if (hasMore()) {
+      <button
+        type="button"
+        (click)="loadMore()"
+        [disabled]="loadingMore()"
+        class="action-outline action-sm">
+        {{ loadingMore() ? ('common.loading' | t) : ('common.loadMore' | t) }}
+      </button>
+    } @else {
+      <span></span>
+    }
+    <button type="button" (click)="close()" class="action-outline action-md">
+      {{ 'common.close' | t }}
+    </button>
+  </div>
+</div>

@@ -1,6 +1,7 @@
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 
 import { environment } from 'src/environments/environment';
 import { apiErrorInterceptor } from 'src/app/core/interceptor/api-error.interceptor';
@@ -21,9 +22,15 @@ describe('ProductsComponent', () => {
   }
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [ProductsComponent],
-      providers: [provideHttpClient(withInterceptors([apiErrorInterceptor])), provideHttpClientTesting()],
+      providers: [
+        provideHttpClient(withInterceptors([apiErrorInterceptor])),
+        provideHttpClientTesting(),
+        // The filters live in the URL, so the listing needs a real router.
+        provideRouter([]),
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ProductsComponent);
@@ -49,12 +56,32 @@ describe('ProductsComponent', () => {
     expect(component.items().length).toBe(1);
   });
 
+  it('should say how much of the catalogue is on screen, agreeing with the count', async () => {
+    http.expectOne(baseUrl).flush({ items: [productPayload('p-1', 'P-1', 'Steel bolt', 10)] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Singular for one row: the noun has to agree, not read "1 produtos".
+    expect(component.showingLabel()).toBe('Mostrando 1 produto');
+    expect(text()).toContain('Mostrando 1 produto');
+  });
+
+  it('should count in the plural once there is more than one product', async () => {
+    http.expectOne(baseUrl).flush({
+      items: [productPayload('p-1', 'P-1', 'Steel bolt', 10), productPayload('p-2', 'P-2', 'Hammer', 4)],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.showingLabel()).toBe('Mostrando 2 produtos');
+  });
+
   it('should tell the operator when there is nothing registered yet', async () => {
     http.expectOne(baseUrl).flush({ items: [] });
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('No products yet');
+    expect(text()).toContain('Ainda não há produtos.');
   });
 
   it('should show a recoverable message when the service is unreachable', async () => {
@@ -62,8 +89,8 @@ describe('ProductsComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('could not be reached');
-    expect(text()).toContain('Try again');
+    expect(text()).toContain('Não foi possível contatar o serviço.');
+    expect(text()).toContain('Tentar novamente');
     expect(component.loading()).toBe(false);
   });
 
@@ -110,7 +137,7 @@ describe('ProductsComponent', () => {
     expect(component.formOpen()).toBe(true);
     expect(component.saving()).toBe(false);
     expect(component.saveFailure()?.code).toBe('duplicated_product_code');
-    expect(text()).toContain('already exists');
+    expect(text()).toContain('Já existe um produto com este código.');
   });
 
   it('should send an update when a product is being edited', async () => {
@@ -139,7 +166,7 @@ describe('ProductsComponent', () => {
     fixture.detectChanges();
 
     expect(component.hasMore()).toBe(true);
-    expect(text()).toContain('Load more');
+    expect(text()).toContain('Carregar mais');
 
     component.loadMore();
 
@@ -151,7 +178,7 @@ describe('ProductsComponent', () => {
     // The page is appended, not replaced.
     expect(component.items().map((product) => product.code)).toEqual(['P-1', 'P-2']);
     expect(component.hasMore()).toBe(false);
-    expect(text()).not.toContain('Load more');
+    expect(text()).not.toContain('Carregar mais');
   });
 
   it('should not offer more pages when the first one is the last', async () => {
@@ -182,14 +209,15 @@ describe('ProductsComponent', () => {
     http.expectOne(baseUrl).flush({ items: [] });
     await fixture.whenStable();
 
-    component.toggleOutOfStock();
+    component.selectStockFilter('out');
+    await fixture.whenStable();
 
     const filtered = http.expectOne((request) => request.params.get('max_balance') === '0');
     filtered.flush({ items: [productPayload('p-1', 'P-1', 'Empty', 0)] });
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(component.outOfStockOnly()).toBe(true);
+    expect(component.stockFilter()).toBe('out');
     expect(component.items().length).toBe(1);
   });
 
@@ -198,6 +226,7 @@ describe('ProductsComponent', () => {
     await fixture.whenStable();
 
     component.toggleLowestBalanceFirst();
+    await fixture.whenStable();
 
     http.expectOne((request) => request.params.get('sort') === 'balance').flush({ items: [] });
     await fixture.whenStable();
@@ -207,7 +236,8 @@ describe('ProductsComponent', () => {
     http.expectOne(baseUrl).flush({ items: [] });
     await fixture.whenStable();
 
-    component.toggleOutOfStock();
+    component.selectStockFilter('out');
+    await fixture.whenStable();
     http
       .expectOne((request) => request.params.get('max_balance') === '0')
       .flush({
@@ -230,7 +260,8 @@ describe('ProductsComponent', () => {
     await fixture.whenStable();
 
     component.searchControl.setValue('bolt');
-    component.toggleOutOfStock();
+    component.selectStockFilter('out');
+    await fixture.whenStable();
 
     const combined = http.match(
       (request) => request.params.get('search') === 'bolt' && request.params.get('max_balance') === '0',
@@ -330,8 +361,8 @@ describe('ProductsComponent', () => {
       // which line stopped it.
       expect(component.adjustmentOpen()).toBe(true);
       expect(component.drafts()[0].delta()).toBe('100');
-      expect(text()).toContain('Nothing was applied.');
-      expect(text()).toContain('Balance is not enough.');
+      expect(text()).toContain('Nada foi aplicado.');
+      expect(text()).toContain('O saldo do produto não é suficiente.');
       expect(component.selectedCount()).toBe(2);
     });
 
@@ -460,6 +491,123 @@ describe('ProductsComponent', () => {
       fixture.detectChanges();
 
       expect([...component.selected()]).toEqual(['p-1']);
+    });
+  });
+
+  describe('stock history', () => {
+    it('should open the history of a product and explain each movement', async () => {
+      http.expectOne(baseUrl).flush({ items: [productPayload('p-1', 'P-1', 'Steel bolt', 7)] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.openHistory(component.items()[0]);
+      fixture.detectChanges();
+
+      http.expectOne(`${baseUrl}/p-1/movements`).flush({
+        items: [
+          {
+            id: 'm-2',
+            delta: -3,
+            balance_after: 7,
+            source: 'invoice',
+            invoice_id: 'i-1',
+            created_at: '2026-01-02T00:00:00Z',
+          },
+          {
+            id: 'm-1',
+            delta: 10,
+            balance_after: 10,
+            source: 'registration',
+            actor_email: 'admin@example.com',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The reason a balance changed is the whole point of the panel.
+      expect(text()).toContain('Retirado por uma nota impressa');
+      expect(text()).toContain('Saldo de abertura');
+      expect(text()).toContain('-3');
+    });
+
+    it('should say nothing has moved rather than showing an empty box', async () => {
+      http.expectOne(baseUrl).flush({ items: [productPayload('p-1', 'P-1', 'Steel bolt', 0)] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.openHistory(component.items()[0]);
+      fixture.detectChanges();
+
+      http.expectOne(`${baseUrl}/p-1/movements`).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(text()).toContain('Nenhum movimento registrado para este produto');
+    });
+  });
+
+  describe('filters in the url', () => {
+    it('should ask for what is running out, not only for what already hit zero', async () => {
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+
+      component.selectStockFilter('low');
+      await fixture.whenStable();
+
+      // Ordering by balance comes with it: the point of the filter is to see
+      // the worst first.
+      const filtered = http.expectOne(
+        (request) => request.params.get('max_balance') === '5' && request.params.get('sort') === 'balance',
+      );
+      filtered.flush({ items: [] });
+      await fixture.whenStable();
+
+      expect(component.stockFilter()).toBe('low');
+    });
+
+    it('should read the filters out of the url so a filtered listing survives a reload', async () => {
+      // The first request is the one the component made on init; the state
+      // comes from the query string, which is what a shared link carries.
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+
+      component.selectStockFilter('out');
+      await fixture.whenStable();
+      http.expectOne((request) => request.params.get('max_balance') === '0').flush({ items: [] });
+      await fixture.whenStable();
+
+      const router = TestBed.inject(Router);
+      expect(router.url).toContain('stock=out');
+    });
+  });
+
+  describe('keyboard', () => {
+    it('should jump to the search box on /', async () => {
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/' }));
+
+      const search = (fixture.nativeElement as HTMLElement).querySelector('#product-search');
+      expect(document.activeElement).toBe(search);
+    });
+
+    it('should leave a slash alone while something is being typed', async () => {
+      http.expectOne(baseUrl).flush({ items: [] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const typing = document.createElement('input');
+      document.body.appendChild(typing);
+      typing.focus();
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/' }));
+
+      expect(document.activeElement).toBe(typing);
+      typing.remove();
     });
   });
 });

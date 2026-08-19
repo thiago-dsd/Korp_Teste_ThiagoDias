@@ -1,20 +1,164 @@
 <div class="space-y-6">
-  <div>
-    <h1 class="text-foreground text-2xl font-semibold">Invoice System</h1>
-    <p class="text-muted-foreground mt-1 text-sm">
-      Register products, issue invoices and print them. Stock balances are updated when an invoice is closed.
-    </p>
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-foreground text-2xl font-semibold">
+        @if (userName()) {
+          {{ 'home.greeting' | t: { name: userName() } }}
+        } @else {
+          {{ 'home.today' | t }}
+        }
+      </h1>
+      <p class="text-muted-foreground mt-1 text-sm">{{ 'home.subtitle' | t }}</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <button type="button" (click)="load()" class="action-outline action-md">
+        {{ 'home.refresh' | t }}
+      </button>
+      <a
+        routerLink="/invoices/new"
+        class="action-solid action-md inline-flex items-center gap-2">
+        <svg-icon src="assets/icons/heroicons/outline/folder.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+        {{ 'home.newInvoice' | t }}
+      </a>
+    </div>
   </div>
 
-  <div class="grid gap-4 md:grid-cols-3">
-    @for (step of steps; track step.title) {
-      <div class="bg-background border-muted space-y-3 rounded-md border border-dashed p-5">
-        <div class="bg-primary/10 flex h-10 w-10 items-center justify-center rounded-md">
-          <svg-icon [src]="step.icon" [svgClass]="'h-5 w-5 text-primary'"></svg-icon>
-        </div>
-        <h2 class="text-foreground font-semibold">{{ step.title }}</h2>
-        <p class="text-muted-foreground text-sm">{{ step.description }}</p>
-      </div>
+  @if (partial()) {
+    <div role="alert" class="notice-tight border-amber-500/40 bg-amber-500/10">
+      <p class="font-semibold text-amber-700">{{ 'home.partialTitle' | t }}</p>
+      <p class="mt-1 text-xs text-amber-700/80">
+        {{ 'home.partialBody' | t }}
+      </p>
+    </div>
+  }
+
+  <!-- The four numbers worth acting on, each a link to the listing that acts on it. -->
+  <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    @for (tile of tiles(); track tile.labelKey) {
+      <a
+        [routerLink]="tile.route"
+        [queryParams]="tile.queryParams"
+        class="surface hover:border-muted-foreground/40 hover:bg-card block p-4">
+        <p class="text-muted-foreground text-xs font-semibold uppercase">{{ tile.labelKey | t }}</p>
+        @if (loading()) {
+          <div class="bg-muted/40 mt-2 h-8 w-12 animate-pulse rounded" aria-hidden="true"></div>
+        } @else {
+          <p
+            class="mt-1 text-3xl font-semibold tabular-nums"
+            [class]="
+              tile.value === '0'
+                ? 'text-muted-foreground'
+                : tile.tone === 'danger'
+                  ? 'text-destructive'
+                  : tile.tone === 'warning'
+                    ? 'text-amber-600'
+                    : 'text-foreground'
+            ">
+            {{ tile.value }}
+          </p>
+        }
+        <p class="text-muted-foreground mt-1 text-xs">{{ tile.hintKey | t: tile.hintParams }}</p>
+      </a>
     }
+  </div>
+
+  @if (allClear()) {
+    <div class="notice border-emerald-500/40 bg-emerald-500/10">
+      <p class="font-semibold text-emerald-700">{{ 'home.allClearTitle' | t }}</p>
+      <p class="mt-1 text-emerald-700/80">
+        {{ 'home.allClearBody' | t }}
+      </p>
+    </div>
+  }
+
+  <!-- items-start: a panel with one row must not stretch into a tall empty box. -->
+  <div class="grid items-start gap-4 lg:grid-cols-2">
+    <!-- Invoices that came back open: the stock refused them, and somebody has to decide what to do. -->
+    <section class="surface" aria-labelledby="attention-title">
+      <div class="flex items-center justify-between gap-3 border-b border-dashed p-4">
+        <h2 id="attention-title" class="text-foreground text-sm font-semibold">{{ 'home.attentionTitle' | t }}</h2>
+        <a
+          routerLink="/invoices"
+          [queryParams]="{ attention: 'true' }"
+          class="action-link text-primary text-xs font-semibold">
+          {{ 'common.seeAll' | t }}
+        </a>
+      </div>
+
+      @if (loading()) {
+        <div class="space-y-2 p-4" aria-hidden="true">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="bg-muted/40 h-10 animate-pulse rounded"></div>
+          }
+        </div>
+      } @else if (failedInvoices().length === 0) {
+        <p class="text-muted-foreground p-6 text-center text-sm">
+          {{ 'home.noFailedInvoices' | t }}
+        </p>
+      } @else {
+        <ul class="divide-muted divide-y">
+          @for (invoice of topOf(failedInvoices()); track invoice.id) {
+            <li>
+              <a [routerLink]="['/invoices', invoice.id]" class="hover:bg-card/60 block px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-foreground text-sm font-medium">#{{ invoice.number }}</span>
+                  <app-invoice-status [status]="invoice.status" />
+                </div>
+                @if (invoice.failure) {
+                  <p class="text-destructive mt-1 text-xs">{{ invoice.failure | apiError }}</p>
+                }
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- What is about to stop an invoice from being printed. -->
+    <section class="surface" aria-labelledby="stock-title">
+      <div class="flex items-center justify-between gap-3 border-b border-dashed p-4">
+        <h2 id="stock-title" class="text-foreground text-sm font-semibold">{{ 'home.stockTitle' | t }}</h2>
+        <a
+          routerLink="/products"
+          [queryParams]="{ stock: 'low' }"
+          class="action-link text-primary text-xs font-semibold">
+          {{ 'common.seeAll' | t }}
+        </a>
+      </div>
+
+      @if (loading()) {
+        <div class="space-y-2 p-4" aria-hidden="true">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="bg-muted/40 h-10 animate-pulse rounded"></div>
+          }
+        </div>
+      } @else if (outOfStock().length === 0 && lowStock().length === 0) {
+        <p class="text-muted-foreground p-6 text-center text-sm">
+          {{ 'home.allAboveThreshold' | t: { threshold: lowStockThreshold } }}
+        </p>
+      } @else {
+        <ul class="divide-muted divide-y">
+          @for (product of topOf(outOfStock().concat(lowStock())); track product.id) {
+            <li class="flex items-center justify-between gap-3 px-4 py-3">
+              <div class="min-w-0">
+                <p class="text-foreground truncate text-sm font-medium">{{ product.code }}</p>
+                <p class="text-muted-foreground truncate text-xs">{{ product.description }}</p>
+              </div>
+              <app-stock-level [balance]="product.balance" />
+            </li>
+          }
+        </ul>
+        @if (canManageCatalogue()) {
+          <div class="border-t border-dashed p-3">
+            <a
+              routerLink="/products"
+              [queryParams]="{ stock: 'low' }"
+              class="action-link text-primary text-xs font-semibold">
+              {{ 'home.adjustBalances' | t }}
+            </a>
+          </div>
+        }
+      }
+    </section>
   </div>
 </div>

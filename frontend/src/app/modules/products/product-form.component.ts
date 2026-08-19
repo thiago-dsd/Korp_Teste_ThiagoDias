@@ -4,6 +4,10 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 
 import { ApiError } from 'src/app/core/models/api-error.model';
 import { NewProduct, Product } from 'src/app/core/models/product.model';
+import { ApiErrorPipe } from 'src/app/core/i18n/api-error.pipe';
+import { translateFieldMessage } from 'src/app/core/i18n/error-translation';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
+import { TranslateService } from 'src/app/core/i18n/translate.service';
 
 /** Codes are what identifies a product on a printed invoice and in URLs. */
 const CODE_PATTERN = /^[\p{L}\p{N}._-]+$/u;
@@ -17,10 +21,12 @@ const CODE_PATTERN = /^[\p{L}\p{N}._-]+$/u;
  */
 @Component({
   selector: 'app-product-form',
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, TranslatePipe, ApiErrorPipe],
   templateUrl: './product-form.component.html',
 })
 export class ProductFormComponent {
+  private readonly i18n = inject(TranslateService);
+
   /** Product being edited, or undefined when registering a new one. */
   readonly product = input<Product | undefined>();
   /** Whether a request is in flight. */
@@ -65,26 +71,26 @@ export class ProductFormComponent {
     const serverMessage = this.failure()?.details[field];
 
     if (serverMessage) {
-      return serverMessage;
+      return translateFieldMessage(this.i18n, serverMessage);
     }
     if (!control.touched && !this.submitted()) {
       return null;
     }
     if (control.hasError('required')) {
-      return 'This field is required.';
+      return this.i18n.t('validation.required');
     }
     if (control.hasError('maxlength')) {
       const max = control.getError('maxlength').requiredLength;
-      return `Use at most ${max} characters.`;
+      return this.i18n.t('validation.maxLength', { max });
     }
     if (control.hasError('pattern')) {
-      return 'Use only letters, digits, dot, dash or underscore.';
+      return this.i18n.t('validation.onlyCodeCharacters');
     }
     if (control.hasError('min')) {
-      return 'The balance cannot be negative.';
+      return this.i18n.t('validation.balanceNegative');
     }
     if (control.hasError('max')) {
-      return 'This balance is too large.';
+      return this.i18n.t('validation.balanceTooLarge');
     }
     return null;
   }

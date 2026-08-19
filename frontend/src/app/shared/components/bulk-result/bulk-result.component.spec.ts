@@ -23,14 +23,15 @@ describe('BulkResultComponent', () => {
     return (fixture.nativeElement as HTMLElement).textContent ?? '';
   }
 
-  function render(value: BulkResponse, noun = 'item') {
+  function render(value: BulkResponse, nounKey = 'nouns.product') {
     fixture = TestBed.createComponent(BulkResultComponent);
     fixture.componentRef.setInput('response', value);
-    fixture.componentRef.setInput('noun', noun);
+    fixture.componentRef.setInput('nounKey', nounKey);
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({ imports: [BulkResultComponent] }).compileComponents();
   });
 
@@ -40,23 +41,23 @@ describe('BulkResultComponent', () => {
         { index: 0, status: 'succeeded', reference: '1' },
         { index: 1, status: 'succeeded', reference: '2' },
       ]),
-      'invoice',
+      'nouns.invoice',
     );
 
-    expect(text()).toContain('All 2 invoices went through.');
+    expect(text()).toContain('Concluído: todos os 2 notas.');
   });
 
   it('should count what went through when only some items failed', () => {
     render(
       response(false, [
         { index: 0, status: 'succeeded', reference: '1' },
-        { index: 1, status: 'failed', reference: '2', error: { code: 'not_printable', message: 'Already closed.' } },
+        { index: 1, status: 'failed', reference: '2', error: { code: 'insufficient_balance', message: 'Not enough.' } },
       ]),
-      'invoice',
+      'nouns.invoice',
     );
 
-    expect(text()).toContain('1 of 2 invoices went through.');
-    expect(text()).toContain('Already closed.');
+    expect(text()).toContain('Concluído: 1 de 2 notas.');
+    expect(text()).toContain('O saldo do produto não é suficiente.');
   });
 
   it('should say that nothing was applied when an atomic call was refused', () => {
@@ -70,20 +71,20 @@ describe('BulkResultComponent', () => {
           error: { code: 'insufficient_balance', message: 'Not enough.' },
         },
       ]),
-      'movement',
+      'nouns.movement',
     );
 
-    // "Nothing was applied" and "one of your items failed" ask for different
+    // "Nada foi aplicado" and "one of your items failed" ask for different
     // next steps, so they must not read the same.
-    expect(text()).toContain('Nothing was applied.');
-    expect(text()).not.toContain('went through');
+    expect(text()).toContain('Nada foi aplicado.');
+    expect(text()).not.toContain('Concluído');
   });
 
   it('should only list the items that were refused', () => {
     render(
       response(false, [
         { index: 0, status: 'succeeded', reference: 'KEPT' },
-        { index: 1, status: 'failed', reference: 'SHOWN', error: { code: 'invalid', message: 'Bad line.' } },
+        { index: 1, status: 'failed', reference: 'SHOWN', error: { code: 'invalid_product', message: 'Bad line.' } },
       ]),
     );
 
@@ -91,7 +92,7 @@ describe('BulkResultComponent', () => {
     expect(text()).not.toContain('KEPT');
   });
 
-  it('should show the details that say what to correct', () => {
+  it('should show the details that say what to correct, with the field name translated', () => {
     render(
       response(true, [
         {
@@ -107,12 +108,14 @@ describe('BulkResultComponent', () => {
       ]),
     );
 
-    expect(text()).toContain('available');
+    expect(text()).toContain('disponível');
     expect(text()).toContain('5');
   });
 
   it('should fall back to the position when an item has no reference', () => {
-    render(response(false, [{ index: 3, status: 'failed', error: { code: 'invalid', message: 'Bad line.' } }]));
+    render(
+      response(false, [{ index: 3, status: 'failed', error: { code: 'invalid_product', message: 'Bad line.' } }]),
+    );
 
     expect(text()).toContain('Item 4');
   });

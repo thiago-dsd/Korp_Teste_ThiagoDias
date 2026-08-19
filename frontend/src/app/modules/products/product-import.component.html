@@ -1,0 +1,80 @@
+<div class="space-y-4">
+  <div>
+    <h3 class="text-foreground text-sm font-semibold">{{ 'productImport.title' | t }}</h3>
+    <p class="text-muted-foreground mt-1 text-xs">
+      {{ 'productImport.instructionsIntro' | t }}
+      <span class="text-foreground font-medium">{{ 'productImport.instructionsColumns' | t }}</span
+      >. {{ 'productImport.instructionsDetail' | t: { max: maxItems } }}
+    </p>
+  </div>
+
+  <div>
+    <label for="import-text" class="sr-only">{{ 'productImport.textareaLabel' | t }}</label>
+    <textarea
+      id="import-text"
+      [formControl]="textControl"
+      rows="8"
+      spellcheck="false"
+      placeholder="P-1, Steel bolt M8, 120&#10;P-2, Claw hammer, 15"
+      class="font-mono text-xs"></textarea>
+  </div>
+
+  @if (parsed().length > 0) {
+    <div class="surface p-3 text-xs" aria-live="polite">
+      <p class="text-foreground font-semibold">
+        {{ i18n.plural('productImport.readyCount', valid().length) }}
+        @if (rejected().length > 0) {
+          <span class="text-destructive">· {{ i18n.plural('productImport.rejectedCount', rejected().length) }}</span>
+        }
+      </p>
+
+      @if (tooMany()) {
+        <p role="alert" class="text-destructive mt-1">
+          {{ 'productImport.tooMany' | t: { max: maxItems } }}
+        </p>
+      }
+
+      @if (rejected().length > 0) {
+        <ul class="mt-2 space-y-1">
+          @for (line of rejected(); track line.line) {
+            <li class="text-muted-foreground">{{ lineErrorMessage(line) }}</li>
+          }
+        </ul>
+      }
+
+      @if (valid().length > 0) {
+        <ul class="text-muted-foreground mt-2 space-y-0.5">
+          @for (line of valid().slice(0, 3); track line.line) {
+            <li>{{ line.product?.code }} — {{ line.product?.description }} ({{ line.product?.balance }})</li>
+          }
+          @if (valid().length > 3) {
+            <li>{{ 'productImport.andMore' | t: { count: valid().length - 3 } }}</li>
+          }
+        </ul>
+      }
+    </div>
+  }
+
+  @if (failure(); as error) {
+    <div role="alert" class="notice-tight border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
+    </div>
+  }
+
+  @if (result(); as response) {
+    <app-bulk-result [response]="response" nounKey="nouns.product" (dismiss)="dismissResult()" />
+  }
+
+  <div class="flex items-center justify-end gap-2">
+    <button type="button" (click)="close()" class="action-outline action-md">
+      {{ 'common.close' | t }}
+    </button>
+    <button
+      type="button"
+      (click)="submit()"
+      [disabled]="!canImport()"
+      class="action-solid action-md">
+      {{ importing() ? ('productImport.importing' | t) : i18n.plural('productImport.importCount', valid().length) }}
+    </button>
+  </div>
+</div>

@@ -1,7 +1,9 @@
-import { KeyValuePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 
 import { BulkResponse, bulkFailures } from 'src/app/core/models/bulk.model';
+import { translateApiDetails, translateErrorCode } from 'src/app/core/i18n/error-translation';
+import { TranslatePipe } from 'src/app/core/i18n/translate.pipe';
+import { TranslateService } from 'src/app/core/i18n/translate.service';
 
 /**
  * The outcome of a bulk call, written for the operator who is waiting.
@@ -13,15 +15,22 @@ import { BulkResponse, bulkFailures } from 'src/app/core/models/bulk.model';
  */
 @Component({
   selector: 'app-bulk-result',
-  imports: [KeyValuePipe],
+  imports: [TranslatePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './bulk-result.component.html',
 })
 export class BulkResultComponent {
+  private readonly i18n = inject(TranslateService);
+
   readonly response = input.required<BulkResponse>();
 
-  /** What the items are called on the calling screen, e.g. "invoice". */
-  readonly noun = input('item');
+  /**
+   * Key of the noun the items are called on the calling screen, under
+   * `nouns.*` — `nouns.invoice`, not the word "invoice" itself, so the
+   * headline can say "nota"/"notas" in Portuguese and "invoice"/"invoices" in
+   * English from the same call site.
+   */
+  readonly nounKey = input('nouns.product');
 
   readonly dismiss = output<void>();
 
@@ -31,24 +40,35 @@ export class BulkResultComponent {
   /** True when the call was refused as a whole and nothing was applied. */
   readonly rolledBack = computed(() => this.response().atomic && this.response().summary.succeeded === 0);
 
+  private nounForm(count: number): string {
+    return this.i18n.plural(this.nounKey(), count);
+  }
+
   readonly headline = computed(() => {
     const summary = this.response().summary;
+    // The noun in the headline agrees with the request size, the same
+    // grammatical number the original English always used here.
+    const noun = this.nounForm(summary.requested);
 
     if (this.rolledBack()) {
-      return 'Nothing was applied.';
+      return this.i18n.t('bulkResult.nothingApplied');
     }
     if (summary.failed === 0) {
-      return `All ${summary.requested} ${this.plural(summary.requested)} went through.`;
+      return this.i18n.plural('bulkResult.allWentThrough', summary.requested, { noun });
     }
-    return `${summary.succeeded} of ${summary.requested} ${this.plural(summary.requested)} went through.`;
+    return this.i18n.plural('bulkResult.someWentThrough', summary.requested, { succeeded: summary.succeeded, noun });
   });
 
   readonly explanation = computed(() => {
+    // The explanation always talks about the category, not a specific count,
+    // so it always reads in the plural — "these invoices", never "this 1 invoice".
+    const noun = this.nounForm(2);
+
     if (this.rolledBack()) {
-      return `These ${this.noun()}s belong to one document, so a single item that cannot be applied stops all of them. Fix it below and send again.`;
+      return this.i18n.t('bulkResult.rolledBackExplanation', { noun });
     }
     if (this.response().summary.failed > 0) {
-      return `The ${this.noun()}s below were refused and are still selected, so you can correct them and try again.`;
+      return this.i18n.t('bulkResult.refusedExplanation', { noun });
     }
     return '';
   });
@@ -56,7 +76,18 @@ export class BulkResultComponent {
   /** Whether the panel reports a problem, which decides how it is coloured. */
   readonly hasProblem = computed(() => this.response().summary.failed > 0);
 
-  private plural(count: number): string {
-    return count === 1 ? this.noun() : `${this.noun()}s`;
+  /** "Item 3" for a refused line the service could not name. */
+  itemFallback(index: number): string {
+    return this.i18n.t('bulkResult.itemFallback', { index: index + 1 });
+  }
+
+  /** The friendly message for one refused item. */
+  failureMessage(code: string | undefined): string {
+    return code ? translateErrorCode(this.i18n, code) : '';
+  }
+
+  /** The "field: reason" lines under a refused item, both sides translated. */
+  failureDetails(details: Record<string, string> | undefined): { key: string; value: string }[] {
+    return translateApiDetails(this.i18n, details);
   }
 }

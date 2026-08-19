@@ -28,3 +28,28 @@ export interface ProductUpdate {
   /** The version the form was loaded with. */
   version: number;
 }
+
+/** What caused a balance to change. */
+export type MovementSource = 'registration' | 'edit' | 'adjustment' | 'invoice';
+
+/**
+ * One change to the balance of a product.
+ *
+ * The balance answers "how much is there"; the history answers "why", which is
+ * the first question asked whenever a stock count does not match.
+ */
+export interface StockMovement {
+  id: string;
+  /** How much the balance moved; negative took stock out. */
+  delta: number;
+  /** What the balance became, so one row explains itself. */
+  balanceAfter: number;
+  source: MovementSource;
+  /** The note written on a delivery or a correction, when there was one. */
+  reason: string;
+  /** Set when the cause was an invoice being printed. */
+  invoiceId: string;
+  /** Who did it, when a person did rather than an invoice. */
+  actorEmail: string;
+  createdAt: string;
+}
