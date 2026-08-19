@@ -4,7 +4,16 @@ import { Observable, map, switchMap, takeWhile, timer } from 'rxjs';
 
 import { environment } from 'src/environments/environment';
 import { BulkResponse } from '../models/bulk.model';
-import { DraftLine, Invoice, InvoiceDraft, InvoiceItem, InvoiceStatus, NewInvoiceItem } from '../models/invoice.model';
+import {
+  DraftLine,
+  Invoice,
+  InvoiceAuthor,
+  InvoiceDraft,
+  InvoiceItem,
+  InvoiceSearch,
+  InvoiceStatus,
+  NewInvoiceItem,
+} from '../models/invoice.model';
 import { Page } from '../models/page.model';
 import { idempotencyHeaders } from './product.service';
 
@@ -42,6 +51,8 @@ interface InvoicePayload {
   created_at: string;
   updated_at: string;
   printed_at: string | null;
+  issued_by?: { id: string; email?: string } | null;
+  printed_by?: { id: string; email?: string } | null;
 }
 
 interface InvoiceItemPayload {
@@ -55,6 +66,12 @@ interface InvoiceItemPayload {
 interface InvoiceListPayload {
   items: InvoicePayload[];
   next_cursor?: string;
+}
+
+interface SearchPayload {
+  filters: Record<string, string>;
+  warnings: string[];
+  model: string;
 }
 
 interface DraftPayload {
@@ -156,6 +173,37 @@ export class InvoiceService {
     );
   }
 
+  /**
+   * Asks the assistant to turn a question into listing filters.
+   *
+   * It answers filters, never invoices: the screen puts them where the filters
+   * already live — the URL — and the ordinary listing reads them. That is what
+   * keeps the result visible and editable instead of a black box, and it is why
+   * the filter names are translated here from the ones the API speaks.
+   */
+  searchByText(text: string): Observable<InvoiceSearch> {
+    return this.http.post<SearchPayload>(`${this.baseUrl}/search`, { text }).pipe(
+      map((payload) => {
+        const filters = payload.filters ?? {};
+        // The listing offers one status at a time, so a question covering
+        // several narrows to the first rather than to none.
+        const status = (filters['status'] ?? '').split(',')[0] ?? '';
+
+        return {
+          filters: {
+            status,
+            number: filters['number'] ?? '',
+            from: filters['created_from'] ?? '',
+            to: filters['created_to'] ?? '',
+            product: filters['product_code'] ?? '',
+            attention: filters['has_failure'] === 'true',
+          },
+          warnings: payload.warnings ?? [],
+        };
+      }),
+    );
+  }
+
   /** Asks the service to print an invoice. It answers as soon as the request is accepted. */
   requestPrint(id: string): Observable<Invoice> {
     return this.http
@@ -202,7 +250,17 @@ function toInvoice(payload: InvoicePayload): Invoice {
     createdAt: payload.created_at,
     updatedAt: payload.updated_at,
     printedAt: payload.printed_at,
+    issuedBy: toAuthor(payload.issued_by),
+    printedBy: toAuthor(payload.printed_by),
   };
+}
+
+/** An invoice issued before authorship was recorded simply has none. */
+function toAuthor(payload: { id: string; email?: string } | null | undefined): InvoiceAuthor | null {
+  if (!payload?.id) {
+    return null;
+  }
+  return { id: payload.id, email: payload.email ?? '' };
 }
 
 function toDraftLine(payload: DraftPayload['items'][number]): DraftLine {

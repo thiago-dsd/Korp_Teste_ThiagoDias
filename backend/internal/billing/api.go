@@ -17,13 +17,14 @@ import (
 type API struct {
 	service   *Service
 	assistant *DraftAssistant
+	search    *SearchAssistant
 }
 
 // NewAPI builds the HTTP layer of the billing service. The assistant is
 // optional: without it the drafting endpoint reports that it is not available
 // and the screens keep working by hand.
-func NewAPI(service *Service, assistant *DraftAssistant) *API {
-	return &API{service: service, assistant: assistant}
+func NewAPI(service *Service, assistant *DraftAssistant, search *SearchAssistant) *API {
+	return &API{service: service, assistant: assistant, search: search}
 }
 
 // Routes registers the invoice endpoints on the given mux. They are only
@@ -46,6 +47,11 @@ func (a *API) Routes(mux *http.ServeMux, verifier *authn.Verifier, limits Limits
 	// Drafting is paid for on every call, so it has the tightest allowance.
 	mux.Handle("POST /invoices/draft", guard(assistant(http.HandlerFunc(a.draftInvoice))))
 	mux.Handle("GET /invoices/draft", guard(read(http.HandlerFunc(a.assistantStatus))))
+
+	// Searching costs a model call like drafting does, so it shares the same
+	// allowance. It answers filters, never invoices: the listing endpoint above
+	// is what reads them.
+	mux.Handle("POST /invoices/search", guard(assistant(http.HandlerFunc(a.searchInvoices))))
 
 	// One bulk call does the work of up to a hundred, so it has its own
 	// allowance instead of spending the ordinary write budget.
@@ -143,6 +149,48 @@ func (a *API) draftInvoice(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	httpx.WriteJSON(w, r, http.StatusOK, draftResponse{Items: items, Warnings: draft.Warnings, Model: draft.Model})
+}
+
+type searchRequest struct {
+	Text string `json:"text"`
+}
+
+type searchResponse struct {
+	Filters  map[string]string `json:"filters"`
+	Warnings []string          `json:"warnings"`
+	Model    string            `json:"model"`
+}
+
+// searchInvoices reads a question such as "open invoices from August with
+// bolts" and answers the filters that ask for it.
+//
+// It deliberately does not return invoices. The filters go back to the screen,
+// which puts them in the URL where the listing filters already live, and the
+// ordinary listing endpoint reads them — so what the assistant produces is
+// visible, editable and bookmarkable rather than a black box answer.
+func (a *API) searchInvoices(w http.ResponseWriter, r *http.Request) {
+	if a.search == nil || !a.search.Available() {
+		httpx.WriteError(w, r, aiclient.ErrNotConfigured)
+		return
+	}
+
+	var request searchRequest
+	if err := httpx.DecodeJSON(w, r, &request); err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	search, err := a.search.Search(r.Context(), request.Text)
+	if err != nil {
+		httpx.WriteError(w, r, err)
+		return
+	}
+
+	httpx.WriteJSON(w, r, http.StatusOK, searchResponse{
+		Filters:  search.Filters,
+		Warnings: search.Warnings,
+		Model:    search.Model,
+	})
 }
 
 // assistantStatus lets the screen know whether to offer the assistant at all.

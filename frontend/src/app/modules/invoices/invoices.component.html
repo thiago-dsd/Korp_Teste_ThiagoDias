@@ -1,28 +1,38 @@
 <div class="space-y-5">
   <div class="flex flex-wrap items-end justify-between gap-3">
     <div>
-      <h1 class="text-foreground text-xl font-semibold">Invoices</h1>
+      <h1 class="text-foreground text-xl font-semibold">{{ 'invoices.title' | t }}</h1>
       <p class="text-muted-foreground mt-1 text-sm">
-        Invoices are numbered in sequence. Printing one closes it and debits the stock balances.
+        {{ 'invoices.subtitle' | t }}
       </p>
     </div>
-    <a
-      routerLink="/invoices/new"
-      class="bg-primary text-primary-foreground inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold">
-      <svg-icon src="assets/icons/heroicons/outline/folder.svg" [svgClass]="'h-4 w-4'"></svg-icon>
-      New invoice
-    </a>
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        (click)="exportCsv()"
+        [disabled]="items().length === 0"
+        class="action-outline action-md inline-flex items-center gap-2">
+        <svg-icon src="assets/icons/heroicons/outline/download.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+        {{ 'common.export' | t }}
+      </button>
+      <a
+        routerLink="/invoices/new"
+        class="action-solid action-md inline-flex items-center gap-2">
+        <svg-icon src="assets/icons/heroicons/outline/folder.svg" [svgClass]="'h-4 w-4'"></svg-icon>
+        {{ 'invoices.newInvoice' | t }}
+      </a>
+    </div>
   </div>
 
   <div class="flex flex-wrap items-center gap-2">
-    <div class="flex flex-wrap gap-1" role="group" aria-label="Filter invoices by status">
+    <div class="flex flex-wrap gap-1" role="group" [attr.aria-label]="'invoices.filterStatusAria' | t">
       @for (status of filters; track status) {
         <button
           type="button"
           (click)="selectFilter(status)"
           [attr.aria-pressed]="activeFilter() === status"
-          class="rounded-md px-3 py-1.5 text-xs font-semibold"
-          [class]="activeFilter() === status ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'">
+          class="action-sm"
+          [class]="activeFilter() === status ? 'action-selected' : 'action-quiet'">
           {{ labelFor(status) }}
         </button>
       }
@@ -31,191 +41,282 @@
       type="button"
       (click)="toggleNeedsAttention()"
       [attr.aria-pressed]="needsAttentionOnly()"
-      class="rounded-md px-3 py-1.5 text-xs font-semibold"
-      [class]="needsAttentionOnly() ? 'bg-destructive text-primary-foreground' : 'bg-card text-muted-foreground'">
-      Needs attention
+      class="action-sm"
+      [class]="needsAttentionOnly() ? 'action-danger-selected' : 'action-quiet'">
+      {{ 'invoices.needsAttention' | t }}
     </button>
 
     @if (hasPrinting()) {
-      <button type="button" (click)="refresh()" class="text-primary ml-auto text-xs font-semibold underline">
-        Refresh
+      <button
+        type="button"
+        (click)="refresh()"
+        class="action-link text-primary ml-auto text-xs font-semibold underline">
+        {{ 'invoices.refresh' | t }}
       </button>
     }
   </div>
 
+  @if (assistantAvailable()) {
+    <!--
+      Asking in plain words sets the filters below; it does not list anything
+      itself. Placed right above them so the answer lands where the eye already
+      is, and stays correctable by hand.
+    -->
+    <section class="notice border-primary/30 bg-primary/5 border-dashed" aria-labelledby="ask-title">
+      <h2 id="ask-title" class="text-foreground flex items-center gap-2 text-sm font-semibold">
+        <svg-icon src="assets/icons/heroicons/outline/magnifying-glass.svg" [svgClass]="'h-4 w-4 text-primary'"></svg-icon>
+        {{ 'invoices.askTitle' | t }}
+      </h2>
+      <p class="text-muted-foreground mt-1 text-xs">{{ 'invoices.askBody' | t }}</p>
+
+      <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+        <label for="ask-text" class="sr-only">{{ 'invoices.askLabel' | t }}</label>
+        <input
+          id="ask-text"
+          type="text"
+          class="flex-1"
+          [formControl]="questionControl"
+          (keydown.enter)="askAssistant()"
+          [placeholder]="'invoices.askPlaceholder' | t" />
+        <button
+          type="button"
+          (click)="askAssistant()"
+          [disabled]="asking() || questionControl.value.trim().length === 0"
+          class="action-solid action-md">
+          {{ asking() ? ('invoices.asking' | t) : ('invoices.ask' | t) }}
+        </button>
+      </div>
+
+      <div aria-live="polite">
+        @if (askWarnings().length > 0) {
+          <ul class="mt-3 space-y-1">
+            @for (warning of askWarnings(); track warning) {
+              <li class="text-xs text-amber-700">{{ warning }}</li>
+            }
+          </ul>
+        }
+        @if (askFailure(); as error) {
+          <p role="alert" class="text-destructive mt-3 text-xs">{{ error | apiError }}</p>
+        }
+      </div>
+    </section>
+  }
+
   <form
     (ngSubmit)="applyFilters()"
-    class="border-muted grid gap-3 rounded-md border p-4 sm:grid-cols-2 lg:grid-cols-5"
-    aria-label="Filter invoices">
+    class="surface grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5"
+    [attr.aria-label]="'invoices.filterFormAria' | t">
     <div>
-      <label for="filter-number" class="text-foreground mb-1 block text-xs font-medium">Invoice number</label>
+      <label for="filter-number" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.numberLabel' | t }}</label>
       <input
         id="filter-number"
+        #numberField
         type="number"
         min="1"
         inputmode="numeric"
         [formControl]="numberControl"
-        placeholder="e.g. 42"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+        [placeholder]="'invoices.numberPlaceholder' | t" />
     </div>
     <div>
-      <label for="filter-from" class="text-foreground mb-1 block text-xs font-medium">Issued from</label>
+      <label for="filter-from" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.fromLabel' | t }}</label>
       <input
         id="filter-from"
         type="date"
-        [formControl]="fromControl"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+        [formControl]="fromControl" />
     </div>
     <div>
-      <label for="filter-to" class="text-foreground mb-1 block text-xs font-medium">Issued to</label>
+      <label for="filter-to" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.toLabel' | t }}</label>
       <input
         id="filter-to"
         type="date"
-        [formControl]="toControl"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+        [formControl]="toControl" />
     </div>
     <div>
-      <label for="filter-product" class="text-foreground mb-1 block text-xs font-medium">Product code</label>
+      <label for="filter-product" class="text-foreground mb-1 block text-xs font-medium">{{ 'invoices.productLabel' | t }}</label>
       <input
         id="filter-product"
         type="text"
         [formControl]="productCodeControl"
-        placeholder="e.g. P-1"
-        class="border-muted bg-background text-foreground w-full rounded-md border px-3 py-2 text-sm" />
+        [placeholder]="'invoices.productPlaceholder' | t" />
     </div>
     <div class="flex items-end gap-2">
-      <button
-        type="submit"
-        class="bg-primary text-primary-foreground flex-1 rounded-md px-3 py-2 text-sm font-semibold">
-        Apply
-      </button>
+      <button type="submit" class="action-solid action-md flex-1">{{ 'common.apply' | t }}</button>
       @if (hasActiveFilters()) {
         <button
           type="button"
           (click)="clearFilters()"
-          class="border-muted text-muted-foreground rounded-md border px-3 py-2 text-sm font-semibold">
-          Clear
+          class="action-outline action-md">
+          {{ 'common.clear' | t }}
         </button>
       }
     </div>
   </form>
 
   @if (loadFailure(); as error) {
-    <div role="alert" class="border-destructive/40 bg-destructive/10 rounded-md border p-4 text-sm">
-      <p class="text-destructive font-semibold">{{ error.message }}</p>
-      <button type="button" (click)="refresh()" class="text-destructive mt-2 text-xs font-semibold underline">
-        Try again
+    <div role="alert" class="notice border-destructive/40 bg-destructive/10">
+      <p class="text-destructive font-semibold">{{ error | apiError }}</p>
+      <button
+        type="button"
+        (click)="refresh()"
+        class="action-link text-destructive mt-2 text-xs font-semibold underline">
+        {{ 'common.tryAgain' | t }}
       </button>
     </div>
   }
 
   @if (batchResult(); as result) {
-    <app-bulk-result [response]="result" noun="invoice" (dismiss)="dismissBatchResult()" />
+    <app-bulk-result [response]="result" nounKey="nouns.invoice" (dismiss)="dismissBatchResult()" />
   }
 
   @if (selectedCount() > 0) {
-    <div class="border-primary/40 bg-primary/5 flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
+    <div class="notice-tight border-primary/40 bg-primary/5 flex flex-wrap items-center gap-3">
       <span class="text-foreground font-semibold">
-        {{ selectedCount() }} invoice{{ selectedCount() === 1 ? '' : 's' }} selected
+        {{ i18n.plural('invoices.selectedCount', selectedCount()) }}
       </span>
       @if (selectionFull()) {
-        <span class="text-muted-foreground text-xs"> One batch carries at most {{ maxSelectable }} invoices. </span>
+        <span class="text-muted-foreground text-xs">{{ 'invoices.selectionLimitNotice' | t: { max: maxSelectable } }}</span>
       }
       <button
         type="button"
         (click)="printSelected()"
         [disabled]="printingBatch()"
-        class="bg-primary text-primary-foreground ml-auto rounded-md px-4 py-2 text-sm font-semibold disabled:opacity-60">
-        {{ printingBatch() ? 'Sending…' : 'Print selected' }}
+        class="action-solid action-md ml-auto">
+        {{ printingBatch() ? ('invoices.sending' | t) : ('invoices.printSelected' | t) }}
       </button>
       <button
         type="button"
         (click)="clearSelection()"
-        class="border-muted text-muted-foreground rounded-md border px-3 py-2 text-xs font-semibold">
-        Clear
+        class="action-outline action-sm">
+        {{ 'common.clear' | t }}
       </button>
     </div>
   }
 
-  <div class="border-muted overflow-x-auto rounded-md border">
-    <table class="w-full text-left text-sm">
-      <caption class="sr-only">
-        Issued invoices
-      </caption>
-      <thead class="bg-card text-muted-foreground text-xs uppercase">
-        <tr>
-          <th scope="col" class="w-10 px-4 py-3">
-            @if (hasSelectable()) {
-              <button type="button" (click)="selectAllOpen()" class="text-primary text-xs font-semibold">
-                All open
-              </button>
-            } @else {
-              <span class="sr-only">Select</span>
+  <div class="surface flex min-w-full flex-col">
+    <!-- The card carries its own chrome: what is on screen at the top, how to
+         get more at the bottom, and only the table between them scrolls. -->
+    <div class="text-muted-foreground border-muted/60 border-b px-4 py-3 text-sm font-medium">
+      {{ showingLabel() }}
+    </div>
+    <div class="scroll-area">
+      <table class="w-full text-left text-sm">
+        <caption class="sr-only">
+          {{ 'invoices.tableCaption' | t }}
+        </caption>
+        <thead class="bg-card text-muted-foreground text-xs uppercase">
+          <tr>
+            <!-- Wide enough for the label to stay on one line: at the checkbox's
+                 own width it broke into two ("Todas / abertas") and stopped
+                 reading as a single control. -->
+            <th scope="col" class="w-28 px-4 py-3">
+              @if (hasSelectable()) {
+                <button
+                  type="button"
+                  (click)="selectAllOpen()"
+                  class="action-link text-primary whitespace-nowrap text-xs font-semibold">
+                  {{ 'invoices.allOpen' | t }}
+                </button>
+              } @else {
+                <span class="sr-only">{{ 'invoices.selectLabel' | t }}</span>
+              }
+            </th>
+            <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoices.tableNumber' | t }}</th>
+            <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoices.tableStatus' | t }}</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold">{{ 'invoices.tableProducts' | t }}</th>
+            <th scope="col" class="px-4 py-3 font-semibold">{{ 'invoices.tableCreated' | t }}</th>
+            <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">{{ 'invoices.actionsLabel' | t }}</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-muted divide-y" aria-live="polite" aria-busy="{{ loading() }}">
+          @if (loading() && items().length === 0) {
+            @for (row of [1, 2, 3, 4, 5]; track row) {
+              <tr aria-hidden="true">
+                <td class="px-4 py-3"><div class="bg-muted/40 h-4 w-4 animate-pulse rounded"></div></td>
+                <td class="px-4 py-3"><div class="bg-muted/40 h-4 w-12 animate-pulse rounded"></div></td>
+                <td class="px-4 py-3"><div class="bg-muted/40 h-5 w-20 animate-pulse rounded-full"></div></td>
+                <td class="px-4 py-3"><div class="bg-muted/40 ml-auto h-4 w-8 animate-pulse rounded"></div></td>
+                <td class="px-4 py-3"><div class="bg-muted/40 h-4 w-28 animate-pulse rounded"></div></td>
+                <td class="px-4 py-3"></td>
+              </tr>
             }
-          </th>
-          <th scope="col" class="px-4 py-3 font-semibold">Number</th>
-          <th scope="col" class="px-4 py-3 font-semibold">Status</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold">Products</th>
-          <th scope="col" class="px-4 py-3 font-semibold">Created</th>
-          <th scope="col" class="px-4 py-3 text-right font-semibold"><span class="sr-only">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody class="divide-muted divide-y" aria-live="polite" aria-busy="{{ loading() }}">
-        @if (loading() && items().length === 0) {
-          <tr>
-            <td colspan="6" class="text-muted-foreground px-4 py-8 text-center">Loading invoices…</td>
-          </tr>
-        } @else if (items().length === 0) {
-          <tr>
-            <td colspan="6" class="text-muted-foreground px-4 py-8 text-center">No invoices with this filter.</td>
-          </tr>
-        } @else {
-          @for (invoice of items(); track invoice.id) {
-            <tr [class]="isSelected(invoice.id) ? 'bg-primary/5' : 'hover:bg-card/60'">
-              <td class="px-4 py-3">
-                @if (canSelect(invoice)) {
-                  <input
-                    type="checkbox"
-                    class="accent-primary h-4 w-4"
-                    [checked]="isSelected(invoice.id)"
-                    [disabled]="selectionFull() && !isSelected(invoice.id)"
-                    (change)="toggleSelection(invoice.id)"
-                    [attr.aria-label]="'Select invoice ' + invoice.number + ' for printing'" />
+            <tr class="sr-only">
+              <td colspan="6">{{ 'invoices.loadingSr' | t }}</td>
+            </tr>
+          } @else if (items().length === 0) {
+            <tr>
+              <td colspan="6" class="px-4 py-12 text-center">
+                @if (hasActiveFilters()) {
+                  <p class="text-foreground text-sm font-medium">{{ 'invoices.emptyFilteredTitle' | t }}</p>
+                  <p class="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
+                    {{ 'invoices.emptyFilteredBody' | t }}
+                  </p>
+                  <button
+                    type="button"
+                    (click)="clearFilters()"
+                    class="action-outline action-md mt-3">
+                    {{ 'common.clearFilters' | t }}
+                  </button>
+                } @else {
+                  <p class="text-foreground text-sm font-medium">{{ 'invoices.emptyTitle' | t }}</p>
+                  <p class="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
+                    {{ 'invoices.emptyBody' | t }}
+                  </p>
+                  <a
+                    routerLink="/invoices/new"
+                    class="action-solid action-md mt-3 inline-flex">
+                    {{ 'invoices.createFirst' | t }}
+                  </a>
                 }
-              </td>
-              <td class="text-foreground px-4 py-3 font-medium">#{{ invoice.number }}</td>
-              <td class="px-4 py-3">
-                <app-invoice-status [status]="invoice.status" />
-                @if (invoice.failure) {
-                  <p class="text-destructive mt-1 text-xs">{{ invoice.failure.message }}</p>
-                }
-              </td>
-              <td class="text-muted-foreground px-4 py-3 text-right">{{ invoice.items.length }}</td>
-              <td class="text-muted-foreground px-4 py-3">{{ invoice.createdAt | date: 'short' }}</td>
-              <td class="px-4 py-3 text-right">
-                <a
-                  [routerLink]="['/invoices', invoice.id]"
-                  class="text-primary text-xs font-semibold"
-                  [attr.aria-label]="'Open invoice ' + invoice.number">
-                  Open
-                </a>
               </td>
             </tr>
+          } @else {
+            @for (invoice of items(); track invoice.id) {
+              <tr [class]="isSelected(invoice.id) ? 'bg-primary/5' : 'hover:bg-card/60'">
+                <td class="px-4 py-3">
+                  @if (canSelect(invoice)) {
+                    <input
+                      type="checkbox"
+                      class="accent-primary h-4 w-4"
+                      [checked]="isSelected(invoice.id)"
+                      [disabled]="selectionFull() && !isSelected(invoice.id)"
+                      (change)="toggleSelection(invoice.id)"
+                      [attr.aria-label]="'invoices.selectAria' | t: { number: invoice.number }" />
+                  }
+                </td>
+                <td class="text-foreground px-4 py-3 font-medium">#{{ invoice.number }}</td>
+                <td class="px-4 py-3">
+                  <app-invoice-status [status]="invoice.status" />
+                  @if (invoice.failure) {
+                    <p class="text-destructive mt-1 text-xs">{{ invoice.failure | apiError }}</p>
+                  }
+                </td>
+                <td class="text-muted-foreground px-4 py-3 text-right">{{ invoice.items.length }}</td>
+                <td class="text-muted-foreground px-4 py-3">{{ invoice.createdAt | localeDate: 'short' }}</td>
+                <td class="px-4 py-3 text-right">
+                  <a
+                    [routerLink]="['/invoices', invoice.id]"
+                    class="action-link text-primary text-xs font-semibold"
+                    [attr.aria-label]="'invoices.openAria' | t: { number: invoice.number }">
+                    {{ 'invoices.open' | t }}
+                  </a>
+                </td>
+              </tr>
+            }
           }
-        }
-      </tbody>
-    </table>
-  </div>
-
-  @if (hasMore()) {
-    <div class="flex justify-center">
-      <button
-        type="button"
-        (click)="loadMore()"
-        [disabled]="loadingMore()"
-        class="border-muted text-foreground rounded-md border px-4 py-2 text-sm font-semibold disabled:opacity-60">
-        {{ loadingMore() ? 'Loading…' : 'Load more' }}
-      </button>
+        </tbody>
+      </table>
     </div>
-  }
+
+    @if (hasMore()) {
+      <div class="border-muted/60 flex justify-center border-t px-4 py-3">
+        <button
+          type="button"
+          (click)="loadMore()"
+          [disabled]="loadingMore()"
+          class="action-outline action-sm">
+          {{ loadingMore() ? ('common.loading' | t) : ('common.loadMore' | t) }}
+        </button>
+      </div>
+    }
+  </div>
 </div>

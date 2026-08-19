@@ -29,8 +29,9 @@ import (
 
 const serviceName = "billing-service"
 
-// buildAssistant wires the drafting assistant when a model is configured.
-func buildAssistant(catalogue billing.CatalogueReader, logger *slog.Logger) *billing.DraftAssistant {
+// modelFromEnvironment reads the deployment the assistants share, and answers
+// nil when none is configured — which is what turns them off.
+func modelFromEnvironment(logger *slog.Logger) aiclient.Model {
 	config := aiclient.Config{
 		Endpoint:   os.Getenv("AZURE_AI_FOUNDRY_ENDPOINT"),
 		APIKey:     os.Getenv("AZURE_AI_FOUNDRY_API_KEY"),
@@ -38,12 +39,23 @@ func buildAssistant(catalogue billing.CatalogueReader, logger *slog.Logger) *bil
 		APIVersion: os.Getenv("AZURE_AI_FOUNDRY_API_VERSION"),
 	}
 	if !config.Configured() {
-		logger.Info("invoice drafting assistant is disabled; no model is configured")
-		return billing.NewDraftAssistant(nil, catalogue, logger)
+		logger.Info("assistants are disabled; no model is configured")
+		return nil
 	}
 
-	logger.Info("invoice drafting assistant is enabled", "deployment", config.Deployment)
-	return billing.NewDraftAssistant(aiclient.NewFoundry(config), catalogue, logger)
+	logger.Info("assistants are enabled", "deployment", config.Deployment)
+	return aiclient.NewFoundry(config)
+}
+
+// buildAssistants wires the drafting and the search assistants over the same
+// deployment. A nil model leaves both reporting themselves unavailable, and
+// the screens do without them.
+func buildAssistants(catalogue billing.CatalogueReader, logger *slog.Logger) (*billing.DraftAssistant, *billing.SearchAssistant) {
+	model := modelFromEnvironment(logger)
+	if model == nil {
+		return billing.NewDraftAssistant(nil, catalogue, logger), billing.NewSearchAssistant(nil, catalogue, logger)
+	}
+	return billing.NewDraftAssistant(model, catalogue, logger), billing.NewSearchAssistant(model, catalogue, logger)
 }
 
 func main() {
@@ -120,9 +132,9 @@ func run() error {
 
 	// The assistant is optional: without a deployment the screens simply do
 	// not offer it, and everything else keeps working.
-	assistant := buildAssistant(stock, logger)
+	assistant, search := buildAssistants(stock, logger)
 
-	api := billing.NewAPI(billing.NewService(invoices, stock, invoices), assistant)
+	api := billing.NewAPI(billing.NewService(invoices, stock, invoices), assistant, search)
 	api.Routes(mux, verifier, billing.Limits{
 		Limiter: limiter,
 		Read:    cfg.RateLimits.Read,

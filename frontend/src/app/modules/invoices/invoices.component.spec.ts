@@ -34,6 +34,7 @@ describe('InvoicesComponent', () => {
   }
 
   beforeEach(async () => {
+    localStorage.clear();
     await TestBed.configureTestingModule({
       imports: [InvoicesComponent],
       providers: [
@@ -51,7 +52,95 @@ describe('InvoicesComponent', () => {
 
   afterEach(() => {
     http.match((request) => request.url.startsWith('assets/')).forEach((request) => request.flush('<svg></svg>'));
+    // The screen asks whether the search assistant is configured on every load.
+    // Most tests here are about the listing and do not care either way.
+    http.match(`${invoicesUrl}/draft`).forEach((request) => request.flush({ available: false }));
     http.verify();
+  });
+
+  it('should not offer the question box when no model is configured', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: false });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.assistantAvailable()).toBe(false);
+    expect(text()).not.toContain('Busque escrevendo');
+  });
+
+  it('should turn a question into the filters above the listing', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.questionControl.setValue('notas abertas de agosto com parafuso');
+    component.askAssistant();
+
+    const request = http.expectOne(`${invoicesUrl}/search`);
+    expect(request.request.body).toEqual({ text: 'notas abertas de agosto com parafuso' });
+    request.flush({
+      filters: { status: 'OPEN', created_from: '2026-08-01', created_to: '2026-08-31', product_code: 'P-1' },
+      warnings: [],
+      model: 'test',
+    });
+    await fixture.whenStable();
+
+    // The answer lands in the controls, so the operator sees what was
+    // understood and can correct it by hand.
+    expect(component.activeFilter()).toBe('OPEN');
+    expect(component.fromControl.value).toBe('2026-08-01');
+    expect(component.toControl.value).toBe('2026-08-31');
+    expect(component.productCodeControl.value).toBe('P-1');
+
+    // And the listing reloads through the URL, the same path a hand-set filter
+    // takes.
+    const reload = http.expectOne((request) => request.url === invoicesUrl);
+    expect(reload.request.params.get('status')).toBe('OPEN');
+    expect(reload.request.params.get('product_code')).toBe('P-1');
+    reload.flush({ items: [] });
+  });
+
+  it('should show what the assistant could not use', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.questionControl.setValue('notas abertas emitidas pela Ada');
+    component.askAssistant();
+    http.expectOne(`${invoicesUrl}/search`).flush({
+      filters: { status: 'OPEN' },
+      warnings: ['"emitidas pela Ada" was not understood as a filter.'],
+      model: 'test',
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.askWarnings().length).toBe(1);
+    expect(text()).toContain('emitidas pela Ada');
+
+    http.expectOne((request) => request.url === invoicesUrl).flush({ items: [] });
+  });
+
+  it('should keep the listing usable when the assistant fails', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    http.expectOne(`${invoicesUrl}/draft`).flush({ available: true });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.questionControl.setValue('notas abertas');
+    component.askAssistant();
+    http.expectOne(`${invoicesUrl}/search`).flush(
+      { error: { code: 'ai_unavailable', message: 'The assistant is unavailable right now.' } },
+      { status: 503, statusText: 'Service Unavailable' },
+    );
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.askFailure()).not.toBeNull();
+    // The filters the operator can set by hand are untouched.
+    expect(component.activeFilter()).toBe('');
   });
 
   it('should list invoices with their status', async () => {
@@ -63,8 +152,8 @@ describe('InvoicesComponent', () => {
 
     expect(component.items().length).toBe(2);
     expect(text()).toContain('#2');
-    expect(text()).toContain('Closed');
-    expect(text()).toContain('Open');
+    expect(text()).toContain('Fechada');
+    expect(text()).toContain('Aberta');
   });
 
   it('should show the reason of a failed print attempt in the list', async () => {
@@ -78,7 +167,7 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('Product balance is not enough.');
+    expect(text()).toContain('O saldo do produto não é suficiente.');
   });
 
   it('should filter by status', async () => {
@@ -86,6 +175,7 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
 
     component.selectFilter('CLOSED');
+    await fixture.whenStable();
 
     const filtered = http.expectOne((request) => request.params.get('status') === 'CLOSED');
     filtered.flush({ items: [invoicePayload('i-2', 2, 'CLOSED')] });
@@ -102,7 +192,7 @@ describe('InvoicesComponent', () => {
     fixture.detectChanges();
 
     expect(component.hasPrinting()).toBe(true);
-    expect(text()).toContain('Refresh');
+    expect(text()).toContain('Atualizar');
 
     component.refresh();
     http.expectOne((request) => request.url === invoicesUrl).flush({ items: [invoicePayload('i-1', 1, 'CLOSED')] });
@@ -117,16 +207,34 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('could not be reached');
-    expect(text()).toContain('Try again');
+    expect(text()).toContain('Não foi possível contatar o serviço.');
+    expect(text()).toContain('Tentar novamente');
   });
 
-  it('should tell the operator when no invoice matches the filter', async () => {
+  // An empty listing means two different things, and answering both with the
+  // same sentence leaves the operator unsure whether to change the filter or
+  // create something.
+  it('should offer to create the first invoice when there is nothing at all', async () => {
     http.expectOne(invoicesUrl).flush({ items: [] });
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(text()).toContain('No invoices with this filter.');
+    expect(text()).toContain('Ainda não há notas fiscais.');
+    expect(text()).toContain('Criar a primeira nota');
+  });
+
+  it('should offer to clear the filters when they are what emptied the listing', async () => {
+    http.expectOne(invoicesUrl).flush({ items: [] });
+    await fixture.whenStable();
+
+    component.selectFilter('CLOSED');
+    await fixture.whenStable();
+    http.expectOne((request) => request.params.get('status') === 'CLOSED').flush({ items: [] });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text()).toContain('Nenhuma nota corresponde a estes filtros.');
+    expect(text()).toContain('Limpar filtros');
   });
 
   it('should append the next page of invoices', async () => {
@@ -157,6 +265,7 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
 
     component.selectFilter('CLOSED');
+    await fixture.whenStable();
 
     // A new filter reads the first page again, without carrying the cursor.
     const filtered = http.expectOne(
@@ -175,6 +284,7 @@ describe('InvoicesComponent', () => {
 
     component.numberControl.setValue('42');
     component.applyFilters();
+    await fixture.whenStable();
 
     const filtered = http.expectOne((request) => request.params.get('number') === '42');
     filtered.flush({ items: [invoicePayload('i-42', 42, 'CLOSED')] });
@@ -191,6 +301,7 @@ describe('InvoicesComponent', () => {
     component.fromControl.setValue('2026-08-01');
     component.toControl.setValue('2026-08-31');
     component.applyFilters();
+    await fixture.whenStable();
 
     const filtered = http.expectOne(
       (request) =>
@@ -206,6 +317,7 @@ describe('InvoicesComponent', () => {
 
     component.productCodeControl.setValue('BOLT-1');
     component.applyFilters();
+    await fixture.whenStable();
 
     http.expectOne((request) => request.params.get('product_code') === 'BOLT-1').flush({ items: [] });
     await fixture.whenStable();
@@ -216,6 +328,7 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
 
     component.toggleNeedsAttention();
+    await fixture.whenStable();
 
     const filtered = http.expectOne((request) => request.params.get('has_failure') === 'true');
     filtered.flush({
@@ -229,7 +342,7 @@ describe('InvoicesComponent', () => {
     fixture.detectChanges();
 
     expect(component.needsAttentionOnly()).toBe(true);
-    expect(text()).toContain('Product balance is not enough.');
+    expect(text()).toContain('O saldo do produto não é suficiente.');
   });
 
   it('should combine the status filter with the others', async () => {
@@ -237,11 +350,13 @@ describe('InvoicesComponent', () => {
     await fixture.whenStable();
 
     component.selectFilter('OPEN');
+    await fixture.whenStable();
     http.expectOne((request) => request.params.get('status') === 'OPEN').flush({ items: [] });
     await fixture.whenStable();
 
     component.productCodeControl.setValue('BOLT-1');
     component.applyFilters();
+    await fixture.whenStable();
 
     const combined = http.expectOne(
       (request) => request.params.get('status') === 'OPEN' && request.params.get('product_code') === 'BOLT-1',
@@ -256,6 +371,7 @@ describe('InvoicesComponent', () => {
 
     component.numberControl.setValue('42');
     component.toggleNeedsAttention();
+    await fixture.whenStable();
     http.expectOne((request) => request.params.has('has_failure')).flush({ items: [] });
     await fixture.whenStable();
     fixture.detectChanges();
@@ -263,6 +379,7 @@ describe('InvoicesComponent', () => {
     expect(component.hasActiveFilters()).toBe(true);
 
     component.clearFilters();
+    await fixture.whenStable();
 
     const cleared = http.expectOne(
       (request) => request.url === invoicesUrl && !request.params.has('has_failure') && !request.params.has('number'),
@@ -314,7 +431,7 @@ describe('InvoicesComponent', () => {
       fixture.detectChanges();
 
       expect(component.selectedCount()).toBe(0);
-      expect(text()).toContain('All 2 invoices went through.');
+      expect(text()).toContain('Concluído: todos os 2 notas.');
     });
 
     it('should keep the refused invoices selected so they can be sent again', async () => {
@@ -350,8 +467,8 @@ describe('InvoicesComponent', () => {
       // What worked leaves the selection; what did not stays, with the reason
       // on screen, so the operator resends only the rest.
       expect([...component.selected()]).toEqual(['i-2']);
-      expect(text()).toContain('1 of 2 invoices went through.');
-      expect(text()).toContain('Only an open invoice can be printed.');
+      expect(text()).toContain('Concluído: 1 de 2 notas.');
+      expect(text()).toContain('Apenas notas com status Aberta podem ser impressas.');
     });
 
     it('should keep the selection while reading another page', async () => {
@@ -442,6 +559,7 @@ describe('InvoicesComponent', () => {
 
     component.productCodeControl.setValue('BOLT-1');
     component.applyFilters();
+    await fixture.whenStable();
     http
       .expectOne((request) => request.params.get('product_code') === 'BOLT-1')
       .flush({

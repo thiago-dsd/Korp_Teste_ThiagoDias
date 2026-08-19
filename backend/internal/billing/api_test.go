@@ -231,7 +231,7 @@ func newTestAPI(t *testing.T, lookup *stubLookup) (*memoryInvoices, http.Handler
 	signer = authntest.New(t)
 	invoices := newMemoryInvoices()
 	mux := http.NewServeMux()
-	billing.NewAPI(billing.NewService(invoices, lookup, invoices), nil).Routes(mux, signer.Verifier, testLimits())
+	billing.NewAPI(billing.NewService(invoices, lookup, invoices), nil, nil).Routes(mux, signer.Verifier, testLimits())
 	return invoices, mux
 }
 
