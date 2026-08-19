@@ -1,7 +1,9 @@
 # Detalhamento técnico
 
-Documento exigido pelo desafio. Responde item a item o que a especificação pede, com o motivo de
-cada escolha — não só o que foi usado, mas por que valia a pena.
+Documento exigido pelo desafio. As seções **1 a 7** respondem item a item o que a especificação
+pede, com o motivo de cada escolha — não só o que foi usado, mas por que valia a pena. As seções
+**8 e 9** cobrem duas decisões que o desafio não perguntou e que sustentam metade do
+comportamento do sistema: a mensageria e o provedor de IA.
 
 Autor: Thiago Dias · Repositório: <https://github.com/thiago-dsd/Korp_Teste_ThiagoDias>
 
@@ -244,6 +246,100 @@ ar vira `service_unreachable` em vez de um erro de rede cru.
 ## 7. LINQ / C#
 
 Não se aplica: o backend é em **Go**.
+
+---
+
+## 8. Mensageria: por que existe, e por que RabbitMQ
+
+### O problema que ela resolve
+
+Imprimir uma nota toca **dois serviços com dois bancos**: o faturamento fecha a nota, o estoque
+debita os saldos. Não existe transação distribuída entre eles, então uma chamada HTTP síncrona
+deixaria duas perguntas sem resposta boa: o que acontece se o estoque estiver fora do ar no
+momento do clique, e o que acontece se ele debitar mas a resposta se perder no caminho.
+
+A escolha aqui foi tornar o pedido **durável antes de ser entregue**.
+
+### Padrão outbox: estado e mensagem, ou nenhum dos dois
+
+`internal/billing/print_store.go` grava a mudança de status **e** a mensagem
+`invoice.print_requested` na **mesma transação**. Ou as duas coisas acontecem, ou nenhuma. Não
+existe o estado "a nota foi fechada mas o estoque nunca ficou sabendo", nem o contrário.
+
+Um _relay_ (`messaging/relay.go`) roda dentro do serviço, lê o que está na `outbox_messages` e
+publica no broker. Se o broker estiver fora, a mensagem continua na tabela e sai quando ele voltar
+— e o relay avisa no log quando a fila para de escoar, em vez de reclamar uma vez por mensagem.
+
+**É isso que o vídeo demonstra** ao derrubar o estoque no meio de uma impressão: a nota fica em
+`PRINTING`, o pedido espera na outbox, e quando o serviço volta ela fecha sozinha.
+
+### Entrega ao menos uma vez, efeito exatamente uma vez
+
+Um broker que garante entrega acaba entregando de novo em caso de dúvida. Quem consome grava em
+`processed_messages`, **na mesma transação do trabalho**, que já tratou aquela mensagem
+(`messaging/inbox.go`). A redundância é reconhecida e descartada: entrega ao menos uma vez vira
+efeito exatamente uma vez, que é o que importa para um débito de saldo.
+
+### Por que RabbitMQ e não Kafka
+
+O trabalho aqui é **distribuir tarefas**, não guardar um histórico de eventos para reprocessar
+depois. O que este sistema precisa é confirmação por mensagem, redelivery, e um lugar para onde
+mandar o que não pôde ser processado — que é exatamente o forte do RabbitMQ:
+
+| Recurso usado | Onde |
+|---|---|
+| _Publisher confirms_ | o relay só apaga da outbox depois que o broker confirmou |
+| Filas duráveis | sobrevivem ao restart do broker |
+| _Dead letter exchange_ (`invoices.dlx`) | mensagem que falhou 3 tentativas com _backoff_ vai para a `.dlq`, em vez de sumir |
+| Endpoint de _replay_ | `POST /internal/dead-letters/replay` devolve as mensagens mortas à fila, depois de corrigida a causa |
+| `Qos`/_prefetch_ | limita quanto um consumidor puxa de uma vez |
+
+O Kafka é forte no que este sistema **não** faz: retenção longa, releitura por _offset_, vazão
+alta particionada. Em troca, custa mais para operar. Aqui ele seria complexidade sem uso.
+
+---
+
+## 9. IA: por que Azure AI Foundry
+
+### O sistema não depende dele
+
+`internal/platform/aiclient` existe para que o resto do código dependa da **interface `Model`**, e
+nunca da implementação. Trocar de provedor é escrever outro arquivo nesse pacote; nenhuma regra de
+negócio muda. Os dois assistentes (rascunho e busca) compartilham o mesmo _deployment_ pela mesma
+interface.
+
+### As vantagens que pesaram
+
+**Fica dentro da assinatura da empresa.** O _deployment_ vive numa subscription Azure, com região,
+quota e faturamento próprios — não numa conta pessoal de terceiro com uma chave avulsa. Para um
+sistema que lida com nota fiscal, onde o dado sai da rede, sob que contrato e em que região são
+perguntas que aparecem cedo.
+
+**A API clássica é HTTP puro.** `POST {endpoint}/openai/deployments/{deployment}/chat/completions`
+com o header `api-key`. Sem SDK: são ~200 linhas que controlamos, com _timeout_ de 20s, política de
+_retry_ que distingue erro transitório de rejeição, e teto no tamanho da resposta lida. Uma
+dependência a menos, e nenhuma surpresa escondida.
+
+**O custo é limitado por configuração, não por esperança.** A quota é definida por _deployment_ em
+tokens por minuto, e a versão do modelo é fixada. Somando aos limites do lado da aplicação — texto
+de entrada com teto, catálogo no prompt limitado, resposta limitada, e a chamada contando no
+_rate limit_ do usuário — o gasto tem um teto conhecido.
+
+**Desligado, o sistema continua inteiro.** Sem as variáveis de ambiente, `GET /invoices/draft`
+responde `available:false`, as telas não oferecem os campos, e nada mais degrada. A IA é um
+acréscimo, nunca um caminho crítico.
+
+### O que custou tempo, e vale saber
+
+- Subscription nova vem com o provider `Microsoft.CognitiveServices` **não registrado**; sem
+  registrar, qualquer criação falha.
+- `gpt-4o-mini`, a escolha óbvia por preço, só existe na versão `2024-07-18`, **depreciada em
+  31/03/2026** — a Azure recusa novos _deployments_ dela.
+- Os modelos de raciocínio (`o1`, `o3`, `gpt-5`) **rejeitam `temperature`** e esperam
+  `max_completion_tokens` no lugar de `max_tokens`, então quebram este cliente sem alteração de
+  código. `gpt-4o` é o mais barato que aceita os parâmetros enviados e tem quota Standard.
+
+O README traz os comandos `az` para provisionar o mínimo que funciona.
 
 ---
 
